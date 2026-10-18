@@ -488,6 +488,9 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
   
   
   
+  
+  
+  
   <script>/* Local interaction demo. No account creation, verification API or network calls. */
 (function () {
   'use strict';
@@ -500,12 +503,17 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     root.dataset.inputMethod = 'pointer';
     document.addEventListener('pointerdown', function () {
       root.dataset.inputMethod = 'pointer';
+      cancelAutoAdvance();
     }, true);
     document.addEventListener('keydown', function (event) {
+      cancelAutoAdvance();
       if (event.key === 'Tab' || event.key === 'Enter' || event.key === ' ' || /^Arrow/.test(event.key)) {
         root.dataset.inputMethod = 'keyboard';
       }
     }, true);
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) cancelAutoAdvance();
+    });
 
     var byId = function (id) { return document.getElementById(id); };
     var educationFields = [byId('institution'), byId('matric')].filter(Boolean);
@@ -516,10 +524,13 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     var initialValues = allFields.map(function (field) {
       return { field: field, value: field.value };
     });
-    var validStates = ['intro', 'citizenship', 'editing', 'verifying', 'verified-black', 'verified', 'jamb', 'jamb-verifying', 'jamb-verified', 'account', 'email', 'email-confirmed'];
+    var validStates = ['intro', 'citizenship', 'editing', 'verifying', 'verified-black', 'verified', 'jamb', 'jamb-verifying', 'jamb-verified', 'account', 'email', 'email-confirmed', 'application'];
     var accountStates = ['account', 'email', 'email-confirmed'];
     var timers = new Set();
     var generation = 0;
+    var autoAdvanceTimer = null;
+    var autoAdvanceKind = null;
+    var autoAdvanceGeneration = 0;
     var educationSignature = null;
     var jambSignature = null;
     var accountSignature = null;
@@ -534,9 +545,35 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function cancelTimers() {
+      cancelAutoAdvance();
       generation += 1;
       timers.forEach(function (timer) { clearTimeout(timer); });
       timers.clear();
+    }
+
+    // Auto-navigation is independent of the verification/letter animation.
+    // A user's next interaction cancels navigation without interrupting feedback.
+    function cancelAutoAdvance() {
+      autoAdvanceGeneration += 1;
+      if (autoAdvanceTimer !== null) clearTimeout(autoAdvanceTimer);
+      autoAdvanceTimer = null;
+      autoAdvanceKind = null;
+      root.dataset.autoAdvancePending = 'false';
+    }
+
+    function scheduleAutoAdvance(kind, delay, callback) {
+      cancelAutoAdvance();
+      if (document.hidden) return;
+      var current = autoAdvanceGeneration;
+      autoAdvanceKind = kind;
+      root.dataset.autoAdvancePending = 'true';
+      autoAdvanceTimer = setTimeout(function () {
+        if (current !== autoAdvanceGeneration) return;
+        autoAdvanceTimer = null;
+        autoAdvanceKind = null;
+        root.dataset.autoAdvancePending = 'false';
+        if (!document.hidden) callback();
+      }, delay);
     }
 
     function later(callback, delay) {
@@ -554,8 +591,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function isBusy() {
-      return model.state === 'verifying' || model.state === 'verified-black' ||
-        model.state === 'jamb-verifying' || model.settling;
+      return model.state === 'verifying' || model.state === 'jamb-verifying';
     }
 
     function announce(message) {
@@ -595,10 +631,9 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function progressStep() {
-      if (accountStates.indexOf(model.state) !== -1) return 4;
-      if (model.state.indexOf('jamb') === 0) return 3;
-      if (model.state === 'intro' || model.state === 'citizenship') return 1;
-      return 2;
+      if (model.state === 'application') return window.slasApplication ? window.slasApplication.progressStep() : 3;
+      if (accountStates.indexOf(model.state) !== -1) return 2;
+      return 1;
     }
 
     function getState() {
@@ -612,6 +647,8 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
         accountSubmitted: model.accountSubmitted,
         emailConfirmed: model.emailConfirmed,
         busy: isBusy(),
+        autoAdvancePending: autoAdvanceTimer !== null,
+        autoAdvanceKind: autoAdvanceKind,
         settling: model.settling,
         educationVerified: model.educationVerified,
         jambVerified: model.jambVerified,
@@ -622,6 +659,8 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
         progressStep: progressStep(),
         jambSuccessPhase: model.jambSuccessPhase,
         values: {
+          name: byId('verified-student-name') ? byId('verified-student-name').textContent : 'Kelechi Adunaro',
+          nin: byId('verified-student-nin') ? byId('verified-student-nin').textContent : '12345678901',
           institution: byId('institution') ? byId('institution').value : '',
           matric: byId('matric') ? byId('matric').value : '',
           dob: byId('dob') ? byId('dob').value : '',
@@ -700,9 +739,9 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
         });
       }
       var progressLabel = byId('progress-label');
-      if (progressLabel) progressLabel.textContent = 'Loan application · Step ' + progressStep() + ' of 5';
+      if (progressLabel) progressLabel.textContent = ['Student checks', 'Create account', 'Your details', 'Loan options', 'Review & submit'][progressStep() - 1] + ' · Step ' + progressStep() + ' of 5';
       root.querySelectorAll('.login-label').forEach(function (label) {
-        label.textContent = model.state === 'jamb-verified' ? 'Get help' : 'Log in';
+        label.textContent = model.emailConfirmed || model.state === 'jamb-verified' ? 'Get help' : 'Log in';
       });
       [byId('education-card'), byId('jamb-card')].forEach(function (card) {
         if (!card) return;
@@ -721,9 +760,13 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 
       var educationAction = byId('education-action');
       var jambAction = byId('jamb-action');
-      setDisabled(educationAction, busy || !model.educationOpen || !(model.state === 'editing' || model.state === 'verified'));
+      setDisabled(educationAction, busy || educationSuccessVisible || !model.educationOpen || model.state !== 'editing');
       setDisabled(jambAction, busy || !model.jambOpen || !model.educationVerified || !(model.state === 'jamb' || model.state === 'jamb-verified'));
-      if (educationAction) educationAction.setAttribute('aria-busy', String(model.state === 'verifying'));
+      if (educationAction) {
+        educationAction.setAttribute('aria-busy', String(model.state === 'verifying'));
+        educationAction.hidden = educationSuccessVisible;
+        educationAction.setAttribute('aria-hidden', String(educationSuccessVisible));
+      }
       if (jambAction) jambAction.setAttribute('aria-busy', String(model.state === 'jamb-verifying'));
 
       // Overlapping animation labels stay mounted; expose only the visible label.
@@ -784,11 +827,16 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       accountFields.forEach(function (field) { setFieldEditing(field, model.accountOpen && model.state === 'account'); });
       otpFields.forEach(function (field) { setFieldEditing(field, model.emailOpen && model.state === 'email'); });
       setDisabled(byId('account-submit'), busy || !model.accountOpen || model.state !== 'account');
-      setDisabled(byId('email-confirm'), busy || !model.emailOpen || model.state !== 'email');
+      setDisabled(byId('email-confirm'), busy || !model.emailOpen || model.state !== 'email' || model.emailConfirmed);
       setDisabled(byId('email-resend'), busy || !model.emailOpen || model.state !== 'email' || resendSeconds > 0);
       if (byId('confirmation-email') && byId('account-email')) byId('confirmation-email').textContent = byId('account-email').value.trim();
       if (byId('email-title')) byId('email-title').textContent = model.state === 'email-confirmed' ? 'Email confirmed' : 'Confirm an email';
-      if (byId('email-confirm')) byId('email-confirm').textContent = model.state === 'email-confirmed' ? 'Confirmed' : 'Confirm';
+      if (byId('email-confirm')) {
+        byId('email-confirm').textContent = 'Confirm';
+        byId('email-confirm').hidden = model.emailConfirmed;
+        byId('email-confirm').setAttribute('aria-hidden', String(model.emailConfirmed));
+      }
+      if (byId('email-resend')) byId('email-resend').hidden = model.emailConfirmed;
       if (byId('email-resend')) byId('email-resend').textContent = resendSeconds > 0 ? 'Resend in ' + resendSeconds + ' s' : 'Resend';
       document.querySelectorAll('[data-stage]').forEach(function (button) {
         var selected = button.dataset.stage === model.state;
@@ -884,6 +932,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       if (state.indexOf('jamb') === 0 && !model.educationVerified) return false;
       if (state === 'account' && !model.jambVerified) return false;
       if ((state === 'email' || state === 'email-confirmed') && !model.accountSubmitted) return false;
+      if (state === 'application' && !model.emailConfirmed) return false;
       cancelTimers();
       model.settling = false;
       closeBodies();
@@ -902,6 +951,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function invalidateAccount() {
+      cancelAutoAdvance();
       model.accountSubmitted = false;
       model.emailConfirmed = false;
       model.complete = false;
@@ -947,6 +997,9 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
         educationSignature = submitted;
         paint();
         announce('Student information verified.');
+        scheduleAutoAdvance('education', 420 + 1100 + 650, function () {
+          if (model.educationVerified && model.educationOpen && model.state === 'verified') continueEducation();
+        });
         later(function () {
           model.state = 'verified';
           model.settling = true;
@@ -1041,6 +1094,10 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       if (confirmation.value !== password.value) return showError('account', confirmation, 'Passwords must match.');
       // Local demo only: no account is created and no email is sent.
       var unchanged = model.accountSubmitted && accountSignature === signature(accountFields);
+      if (unchanged && model.emailConfirmed) {
+        transitionTo('email-confirmed', 'Your email is already confirmed.');
+        return true;
+      }
       if (!unchanged) otpFields.forEach(function (field) { field.value = ''; });
       model.accountSubmitted = true;
       model.emailConfirmed = false;
@@ -1060,6 +1117,9 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       model.complete = true;
       navigate('email-confirmed');
       announce('Email confirmed.');
+      scheduleAutoAdvance('email', 1400, function () {
+        if (model.emailConfirmed && model.emailOpen && model.state === 'email-confirmed' && window.slasApplication) window.slasApplication.start();
+      });
       return true;
     }
 
@@ -1104,6 +1164,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function handleFieldChange(section) {
+      cancelAutoAdvance();
       clearErrors(section);
       if (section === 'education' && educationSignature !== null && signature(educationFields) !== educationSignature) {
         cancelTimers();
@@ -1156,6 +1217,10 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function goBack() {
+      if (model.state === 'application' && window.slasApplication) {
+        window.slasApplication.goBack();
+        return;
+      }
       if (isBusy()) {
         var jambBusy = model.state.indexOf('jamb') === 0;
         navigate(jambBusy ? (model.jambVerified ? 'jamb-verified' : 'jamb') : (model.educationVerified ? 'verified' : 'editing'));
@@ -1182,6 +1247,10 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     function toggleSection(section, state) {
       if (isBusy()) return;
       if (model[section + 'Open']) {
+        cancelTimers();
+        model.settling = false;
+        if (model.state === 'verified-black') model.state = 'verified';
+        if (model.state === 'jamb-verified') model.jambSuccessPhase = 'green';
         model[section + 'Open'] = false;
         paint();
       } else navigate(state);
@@ -1338,6 +1407,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 
     window.slasPrototype = Object.freeze({
       setState: setState,
+      navigate: navigate,
       reset: reset,
       verifyEducation: verifyEducation,
       getState: getState
@@ -1391,6 +1461,721 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
   else boot();
 }());
 </script>
+  <script>/* Local application demo. Files remain in this tab; no banking, submission or storage API. */
+(function () {
+  'use strict';
+
+  function boot() {
+    var root = document.getElementById('prototype');
+    if (!root || !document.getElementById('contact-card')) return;
+    var byId = function (id) { return document.getElementById(id); };
+    var steps = ['contact', 'funding', 'bank', 'documents', 'review'];
+    var cards = steps.map(function (name) { return byId(name + '-card'); });
+    var bodies = steps.map(function (name) { return byId(name + '-body'); });
+    var contactIds = ['phone', 'address', 'residence-state', 'residence-lga'];
+    var bankIds = ['bvn', 'bank-name', 'bank-account'];
+    var fields = contactIds.concat(bankIds).map(byId).filter(Boolean);
+    var initialValues = fields.map(function (field) { return { field: field, value: field.value }; });
+    // Deliberately finite demo locations. Each offered state has matching LGA options.
+    var demoLocations = {
+      Lagos: ['Surulere', 'Ikeja', 'Eti-Osa', 'Lagos Mainland', 'Alimosho'],
+      FCT: ['Abuja Municipal', 'Bwari', 'Gwagwalada', 'Kuje', 'Kwali', 'Abaji'],
+      Oyo: ['Ibadan North', 'Ibadan South-West', 'Ibadan North-East', 'Ogbomosho North', 'Oyo East']
+    };
+    var files = { admission: null, 'student-id': null };
+    var fileErrors = { admission: '', 'student-id': '' };
+    var timers = new Set();
+    var generation = 0;
+    var autoGeneration = 0;
+    var autoAdvanceTimer = null;
+    var bankSignature = null;
+    var confettiFrame = 0;
+    var dialogTrigger = null;
+    var reducedMotion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+    var model = freshModel();
+
+    function freshModel() {
+      return { started: false, active: 'contact', open: null, completed: { contact: false, funding: false, bank: false, documents: false, review: false }, bankVerified: false, bankPhase: 'idle', busy: false, submitted: false, summaryOpen: false };
+    }
+    function core() { return window.slasPrototype; }
+    function coreState() { return core() && core().getState ? core().getState() : {}; }
+    function value(id) { var field = byId(id); return field ? field.value.trim() : ''; }
+    function checked(id) { var field = byId(id); return Boolean(field && field.checked); }
+    function focus(element) { if (element && element.focus) element.focus({ preventScroll: true }); }
+    function onClick(id, handler) {
+      var button = byId(id);
+      if (button) button.addEventListener('click', function (event) { event.preventDefault(); if (!model.busy) handler(event); });
+    }
+    function later(callback, delay) {
+      var ticket = generation;
+      var timer = setTimeout(function () { timers.delete(timer); if (generation === ticket) callback(); }, delay);
+      timers.add(timer);
+      return timer;
+    }
+    function cancelTimers() {
+      cancelAutoAdvance();
+      generation += 1;
+      timers.forEach(function (timer) { clearTimeout(timer); });
+      timers.clear();
+      model.busy = false;
+      if (model.bankPhase === 'verifying') model.bankPhase = 'idle';
+      else if (model.bankVerified) model.bankPhase = 'green';
+    }
+    function cancelAutoAdvance() {
+      autoGeneration += 1;
+      if (autoAdvanceTimer !== null) clearTimeout(autoAdvanceTimer);
+      autoAdvanceTimer = null;
+    }
+    function announce(message) {
+      var status = byId('prototype-status');
+      if (status) { status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.textContent = message; }
+    }
+    function money(amount) { return '₦' + amount.toLocaleString('en-NG'); }
+    function amounts() { var upkeep = checked('upkeep-choice') ? 180000 : 0; return { tuition: 250000, upkeep: upkeep, total: 250000 + upkeep }; }
+    function signature(ids) { return JSON.stringify(ids.map(value)); }
+    function bankIsVerified() { return model.bankVerified && bankSignature === signature(bankIds); }
+    function setDisabled(element, disabled) {
+      if (!element) return;
+      element.disabled = Boolean(disabled);
+      element.setAttribute('aria-disabled', String(Boolean(disabled)));
+    }
+    function error(id, message) {
+      var field = byId(id);
+      var target = byId(id + '-error');
+      if (target) { target.textContent = message || ''; target.hidden = !message; }
+      if (field) {
+        field.setAttribute('aria-invalid', String(Boolean(message)));
+        if (target && message) field.setAttribute('aria-describedby', target.id);
+        else if (target && field.getAttribute('aria-describedby') === target.id) field.removeAttribute('aria-describedby');
+      }
+    }
+    function clearConsents() {
+      ['terms-agreement', 'gsi-agreement'].forEach(function (id) { if (byId(id)) byId(id).checked = false; });
+      model.completed.review = false;
+    }
+    function invalidateFrom(name) {
+      var from = steps.indexOf(name);
+      steps.forEach(function (step, index) { if (index >= from) model.completed[step] = false; });
+      // Contact and funding edits require a new review, but do not invalidate
+      // an unchanged, independently verified bank account.
+      if (from < steps.indexOf('bank') && bankIsVerified()) model.completed.bank = true;
+      clearConsents();
+      if (byId('submission-error')) { byId('submission-error').hidden = true; byId('submission-error').textContent = ''; }
+    }
+    function firstIncomplete() {
+      return steps.find(function (name) { return !model.completed[name]; }) || 'review';
+    }
+    function unlocked(name) {
+      var index = steps.indexOf(name);
+      return Boolean(coreState().emailConfirmed) && steps.slice(0, index).every(function (step) { return model.completed[step]; });
+    }
+    function progressStep() {
+      if (model.submitted || model.active === 'documents' || model.active === 'review') return 5;
+      if (model.active === 'funding' || model.active === 'bank') return 4;
+      return 3;
+    }
+    function getState() {
+      return {
+        started: model.started, active: model.active, open: model.open,
+        completed: Object.assign({}, model.completed), bankVerified: bankIsVerified(), bankPhase: model.bankPhase,
+        busy: model.busy, submitted: model.submitted, summaryOpen: model.summaryOpen, progressStep: progressStep(),
+        values: { phone: value('phone'), address: value('address'), state: value('residence-state'), lga: value('residence-lga'), bank: value('bank-name'), account: value('bank-account'), upkeep: checked('upkeep-choice') },
+        files: { admission: files.admission ? files.admission.file.name : null, studentId: files['student-id'] ? files['student-id'].file.name : null },
+        amounts: amounts(), reference: model.submitted ? 'SL-2026-01482' : null
+      };
+    }
+    function measure() {
+      bodies.forEach(function (body, index) {
+        if (body && cards[index]) cards[index].style.setProperty('--application-height', (55 + Math.ceil(body.getBoundingClientRect().height)) + 'px');
+      });
+    }
+    function setTextTargets(selector, text) {
+      root.querySelectorAll(selector).forEach(function (element) { element.textContent = text; });
+    }
+    function paintRecords() {
+      var current = coreState().values || {};
+      var records = { name: current.name || 'Kelechi Adunaro', dob: current.dob || '14/03/2005', email: current.email || 'kelechi.adunaro@example.com', institution: current.institution || 'University of Lagos', matric: current.matric || '2026/01234', jamb: current.jambNumber || '2026123456AB', nin: current.nin || '12345678901' };
+      Object.keys(records).forEach(function (key) { setTextTargets('[data-record="' + key + '"]', records[key]); });
+      var review = { phone: value('phone'), address: value('address'), residence: [value('residence-lga'), value('residence-state')].filter(Boolean).join(', '), bank: value('bank-name'), account: value('bank-account'), admission: files.admission ? files.admission.file.name : 'Not uploaded', 'student-id': files['student-id'] ? files['student-id'].file.name : 'Not provided' };
+      Object.keys(review).forEach(function (key) { setTextTargets('[data-review="' + key + '"]', review[key]); });
+      var totals = amounts();
+      Object.keys(totals).forEach(function (key) { setTextTargets('[data-amount="' + key + '"]', money(totals[key])); });
+      root.querySelectorAll('[data-upkeep-only]').forEach(function (element) { element.hidden = !checked('upkeep-choice'); });
+      if (byId('review-upkeep-period')) byId('review-upkeep-period').hidden = !checked('upkeep-choice');
+      setTextTargets('[data-application-reference]', 'SL-2026-01482');
+    }
+    function paintBank() {
+      var card = byId('bank-card');
+      if (card) card.dataset.bankPhase = model.bankPhase;
+      var status = byId('bank-status');
+      if (status && status.dataset.phase !== model.bankPhase) {
+        status.dataset.phase = model.bankPhase;
+        status.replaceChildren();
+        status.hidden = model.bankPhase === 'idle';
+        if (model.bankPhase === 'verifying') {
+          var dots = document.createElement('span'); dots.className = 'wave-dots'; dots.setAttribute('aria-hidden', 'true');
+          for (var i = 0; i < 3; i += 1) { var dot = document.createElement('i'); dot.textContent = '.'; dots.appendChild(dot); }
+          status.appendChild(dots);
+          status.setAttribute('aria-label', 'Verifying bank details');
+        } else if (model.bankVerified) {
+          'Verified'.split('').forEach(function (letter, index) {
+            var span = document.createElement('span'); span.className = 'verified-letter'; span.style.setProperty('--letter', index); span.textContent = letter; span.setAttribute('aria-hidden', 'true'); status.appendChild(span);
+          });
+          status.setAttribute('aria-label', 'Bank details verified');
+        }
+      }
+      var result = byId('bank-result');
+      if (result) result.hidden = !bankIsVerified();
+      var button = byId('bank-verify');
+      if (button) {
+        button.hidden = bankIsVerified();
+        var label = model.bankPhase === 'verifying' ? 'Verifying details…' : bankIsVerified() ? 'Continue' : 'Verify bank details';
+        if (button.dataset.label !== label) {
+          button.dataset.label = label;
+          button.replaceChildren();
+          if (model.bankPhase === 'verifying') {
+            button.appendChild(document.createTextNode('Verifying details'));
+            var buttonDots = document.createElement('span'); buttonDots.className = 'wave-dots'; buttonDots.setAttribute('aria-hidden', 'true');
+            for (var dotIndex = 0; dotIndex < 3; dotIndex += 1) { var buttonDot = document.createElement('i'); buttonDot.textContent = '.'; buttonDots.appendChild(buttonDot); }
+            button.appendChild(buttonDots);
+          } else button.textContent = label;
+        }
+        button.setAttribute('aria-label', label);
+        setDisabled(button, model.busy || !model.open || !unlocked('bank'));
+        button.setAttribute('aria-busy', String(model.bankPhase === 'verifying'));
+      }
+      bankIds.forEach(function (id) { var field = byId(id); if (field) field.disabled = model.busy; });
+    }
+    function documentsReady() { return Boolean(files.admission && !fileErrors.admission && !fileErrors['student-id'] && checked('policy-agreement')); }
+    function readyToSubmit() {
+      return Boolean(coreState().emailConfirmed && ['contact', 'funding', 'bank', 'documents'].every(function (name) { return model.completed[name]; }) && bankIsVerified() && documentsReady() && checked('terms-agreement') && checked('gsi-agreement'));
+    }
+    function paint() {
+      var state = coreState();
+      var inApplication = state.state === 'application';
+      var visible = state.emailConfirmed && state.state !== 'intro';
+      var nextIndex = steps.indexOf(firstIncomplete());
+      root.dataset.applicationActive = model.active;
+      root.dataset.applicationSubmitted = String(model.submitted);
+      root.dataset.applicationBusy = String(model.busy);
+      root.dataset.submittedSummary = String(model.summaryOpen);
+      steps.forEach(function (name, index) {
+        var card = cards[index], body = bodies[index], toggle = byId(name + '-toggle');
+        if (!card) return;
+        var shown = Boolean(visible && index <= (model.started ? Math.min(steps.length - 1, nextIndex + 1) : 0));
+        var open = Boolean(shown && inApplication && !model.submitted && model.open === name);
+        card.dataset.shown = String(shown);
+        card.dataset.open = String(open);
+        card.dataset.complete = String(name === 'bank' ? bankIsVerified() : model.completed[name]);
+        card.inert = !shown || model.submitted;
+        card.setAttribute('aria-hidden', String(!shown || model.submitted));
+        if (body) { body.inert = !open; body.setAttribute('aria-hidden', String(!open)); }
+        if (toggle) {
+          toggle.setAttribute('aria-expanded', String(open));
+          if (body) toggle.setAttribute('aria-controls', body.id);
+          setDisabled(toggle, !shown || !unlocked(name) || model.busy || model.submitted);
+        }
+      });
+      paintRecords();
+      paintBank();
+      setDisabled(byId('documents-continue'), model.busy || !documentsReady());
+      setDisabled(byId('application-submit'), model.busy || model.submitted || !readyToSubmit());
+      var submit = byId('application-submit');
+      if (submit) { submit.textContent = model.busy && model.active === 'review' ? 'Submitting…' : 'Submit application'; submit.setAttribute('aria-busy', String(model.busy && model.active === 'review')); }
+      ['contact-continue', 'funding-continue'].forEach(function (id) { setDisabled(byId(id), model.busy); });
+      var success = byId('application-success');
+      if (success) { success.hidden = !model.submitted || model.summaryOpen; success.inert = success.hidden; success.setAttribute('aria-hidden', String(success.hidden)); }
+      var summary = byId('submitted-summary');
+      if (summary) { summary.hidden = !model.submitted || !model.summaryOpen; summary.inert = summary.hidden; summary.setAttribute('aria-hidden', String(summary.hidden)); }
+      if (inApplication) {
+        root.dataset.progressStep = String(progressStep());
+        if (byId('progress-label')) byId('progress-label').textContent = ['Student checks', 'Create account', 'Your details', 'Loan options', 'Review & submit'][progressStep() - 1] + ' · Step ' + progressStep() + ' of 5';
+        var progress = byId('flow-progress');
+        if (progress) {
+          progress.setAttribute('aria-valuenow', String(progressStep()));
+          progress.setAttribute('aria-valuetext', 'Loan application, step ' + progressStep() + ' of 5');
+          progress.querySelectorAll('.progress-segment').forEach(function (segment, index) { segment.classList.toggle('is-active', index < progressStep()); segment.classList.toggle('is-complete', index < progressStep() - 1); segment.dataset.active = String(index < progressStep()); });
+        }
+      }
+      measure();
+    }
+    function reveal(name) {
+      later(function () {
+        if (model.open !== name || coreState().state !== 'application') return;
+        var header = byId(name + '-toggle');
+        if (!header) return;
+        var rect = header.getBoundingClientRect();
+        var top = 16, bottom = window.innerHeight - 16;
+        var stack = header.closest('.section-stack');
+        if (stack) {
+          var style = window.getComputedStyle(stack);
+          if (style.overflowY === 'auto' || style.overflowY === 'scroll') { var bounds = stack.getBoundingClientRect(); top = Math.max(top, bounds.top + 12); bottom = Math.min(bottom, bounds.bottom - 12); }
+        }
+        if (rect.top < top || rect.bottom > bottom) header.scrollIntoView({ block: 'nearest', behavior: reducedMotion && reducedMotion.matches ? 'instant' : 'smooth' });
+      }, reducedMotion && reducedMotion.matches ? 0 : 580);
+    }
+    function open(name, toggle) {
+      if (model.busy || model.submitted || !unlocked(name)) return false;
+      cancelAutoAdvance();
+      model.started = true;
+      model.active = name;
+      model.open = toggle && coreState().state === 'application' && model.open === name ? null : name;
+      if (core() && core().navigate) core().navigate('application');
+      paint();
+      if (model.open) reveal(name);
+      return true;
+    }
+    function start() {
+      if (!coreState().emailConfirmed || model.busy) return false;
+      if (model.submitted) { if (core() && core().navigate) core().navigate('application'); paint(); return true; }
+      return open(firstIncomplete());
+    }
+    function goBack() {
+      if (model.busy) return;
+      cancelAutoAdvance();
+      if (model.submitted) { if (model.summaryOpen) { model.summaryOpen = false; paint(); } return; }
+      var index = steps.indexOf(model.active);
+      if (index <= 0) { model.open = null; if (core() && core().navigate) core().navigate('email-confirmed'); paint(); }
+      else open(steps[index - 1]);
+    }
+    function validateContact(showErrors) {
+      var messages = {
+        phone: /^\d{11}$/.test(value('phone')) ? '' : 'Enter an 11-digit phone number.',
+        address: value('address') ? '' : 'Enter your residential address.',
+        'residence-state': Object.prototype.hasOwnProperty.call(demoLocations, value('residence-state')) ? '' : 'Select your state of residence.',
+        'residence-lga': demoLocations[value('residence-state')] && demoLocations[value('residence-state')].indexOf(value('residence-lga')) !== -1 ? '' : 'Select your local government area.'
+      };
+      if (showErrors) Object.keys(messages).forEach(function (id) { error(id, messages[id]); });
+      return Object.keys(messages).every(function (id) { return !messages[id]; });
+    }
+    function validateBank(showErrors) {
+      var messages = { bvn: /^\d{11}$/.test(value('bvn')) ? '' : 'Enter your 11-digit BVN.', 'bank-name': value('bank-name') ? '' : 'Select your bank.', 'bank-account': /^\d{10}$/.test(value('bank-account')) ? '' : 'Enter your 10-digit account number.' };
+      if (showErrors) Object.keys(messages).forEach(function (id) { error(id, messages[id]); });
+      return Object.keys(messages).every(function (id) { return !messages[id]; });
+    }
+    function continueFrom(name) {
+      if (model.busy || model.open !== name || !unlocked(name)) return;
+      if (name === 'contact' && !validateContact(true)) { focus(root.querySelector('#contact-body [aria-invalid="true"]')); measure(); return; }
+      if (name === 'bank' && !bankIsVerified()) return;
+      if (name === 'documents' && !documentsReady()) return;
+      model.completed[name] = true;
+      var next = steps[steps.indexOf(name) + 1];
+      if (name === 'funding' && bankIsVerified()) {
+        model.completed.bank = true;
+        next = 'documents';
+      }
+      if (next) open(next);
+    }
+    function verifyBank() {
+      if (model.busy || model.open !== 'bank' || !unlocked('bank')) return;
+      if (bankIsVerified()) { continueFrom('bank'); return; }
+      if (!validateBank(true)) { focus(root.querySelector('#bank-body [aria-invalid="true"]')); measure(); return; }
+      cancelAutoAdvance();
+      var advanceTicket = autoGeneration;
+      model.busy = true;
+      model.bankPhase = 'verifying';
+      paint();
+      announce('Verifying bank details.');
+      later(function () {
+        bankSignature = signature(bankIds);
+        model.bankVerified = true;
+        model.completed.bank = true;
+        model.busy = false;
+        model.bankPhase = 'black';
+        paint();
+        later(function () {
+          if (!bankIsVerified()) return;
+          model.bankPhase = 'wave'; paint();
+          later(function () {
+            if (!bankIsVerified()) return;
+            model.bankPhase = 'green'; paint(); announce('Bank details verified.');
+            if (advanceTicket !== autoGeneration || document.hidden) return;
+            autoAdvanceTimer = setTimeout(function () {
+              autoAdvanceTimer = null;
+              if (advanceTicket !== autoGeneration || document.hidden || coreState().state !== 'application' || model.open !== 'bank' || !bankIsVerified()) return;
+              open('documents');
+            }, 650);
+          }, reducedMotion && reducedMotion.matches ? 0 : 1030);
+        }, reducedMotion && reducedMotion.matches ? 0 : 160);
+      }, 1300);
+    }
+    function updateLocations(selected) {
+      var select = byId('residence-lga');
+      if (!select) return;
+      var options = demoLocations[value('residence-state')] || [];
+      select.replaceChildren();
+      var prompt = document.createElement('option'); prompt.value = ''; prompt.textContent = 'Select your LGA'; select.appendChild(prompt);
+      options.forEach(function (label) { var option = document.createElement('option'); option.value = label; option.textContent = label; select.appendChild(option); });
+      select.value = options.indexOf(selected) !== -1 ? selected : '';
+      select.disabled = !options.length;
+    }
+    function fillStateOptions() {
+      var select = byId('residence-state');
+      if (!select) return;
+      var selected = select.value || 'Lagos';
+      select.replaceChildren();
+      var prompt = document.createElement('option'); prompt.value = ''; prompt.textContent = 'Select your state'; select.appendChild(prompt);
+      Object.keys(demoLocations).forEach(function (state) { var option = document.createElement('option'); option.value = state; option.textContent = state; select.appendChild(option); });
+      select.value = Object.prototype.hasOwnProperty.call(demoLocations, selected) ? selected : '';
+      updateLocations(value('residence-lga') || 'Surulere');
+    }
+    function fileId(kind) { return kind === 'admission' ? 'admission-file' : 'student-id-file'; }
+    function releaseFile(kind) {
+      if (files[kind] && files[kind].url) URL.revokeObjectURL(files[kind].url);
+      files[kind] = null;
+    }
+    function paintFile(kind) {
+      var id = fileId(kind), record = files[kind], info = byId(id + '-info');
+      var display = byId(id + '-display');
+      if (display) display.textContent = record ? record.file.name : 'No file chosen';
+      if (info) {
+        info.hidden = !record;
+        var name = info.querySelector('[data-file-name]');
+        if (!name) { name = document.createElement('span'); name.dataset.fileName = ''; info.prepend(name); }
+        name.textContent = record ? record.file.name : '';
+      }
+      setDisabled(byId(id + '-view'), !record);
+      setDisabled(byId(id + '-remove'), !record);
+      error(id, fileErrors[kind]);
+    }
+    function chooseFile(kind, file) {
+      if (!file || model.busy || model.submitted) return;
+      var extension = /\.(pdf|jpe?g)$/i.test(file.name);
+      var type = !file.type || file.type === 'application/pdf' || file.type === 'image/jpeg';
+      fileErrors[kind] = !extension || !type ? 'Upload a PDF or JPEG file.' : file.size > 2 * 1024 * 1024 ? 'Choose a file smaller than 2 MB.' : file.size === 0 ? 'This file is empty. Choose another file.' : '';
+      if (!fileErrors[kind]) {
+        var replacement = { file: file, url: URL.createObjectURL(file) };
+        releaseFile(kind);
+        files[kind] = replacement;
+      }
+      else if (byId(fileId(kind))) byId(fileId(kind)).value = '';
+      invalidateFrom('documents');
+      paintFile(kind); paint();
+    }
+    function removeFile(kind) {
+      releaseFile(kind); fileErrors[kind] = '';
+      if (byId(fileId(kind))) byId(fileId(kind)).value = '';
+      invalidateFrom('documents'); paintFile(kind); paint();
+    }
+    function showPolicy(kind, trigger) {
+      var dialog = byId('application-policy-dialog');
+      if (!dialog) return;
+      var content = {
+        declaration: { title: 'Declaration', paragraphs: ['I confirm that the information and documents supplied in this application are accurate and belong to me.', 'I understand that the information is subject to verification before a loan decision is made.'] },
+        terms: { title: 'Loan terms', paragraphs: ['This loan application includes institutional fees and, if selected, an upkeep allowance. The loan carries 0% interest.', 'Submitting an application does not guarantee approval or payment. Repayment and eligibility are governed by NELFUND’s official terms.'] },
+        gsi: { title: 'Global Standing Instruction', paragraphs: ['A Global Standing Instruction allows overdue repayment obligations to be recovered from eligible accounts linked to the borrower, subject to the applicable agreement and rules.'] }
+      }[kind];
+      if (!content) return;
+      dialogTrigger = trigger;
+      if (byId('policy-dialog-title')) byId('policy-dialog-title').textContent = content.title;
+      var body = byId('policy-dialog-body');
+      if (body) {
+        body.replaceChildren();
+        content.paragraphs.concat(['Prototype summary for demonstration only. This is not the final agreement. Review the official terms before making a real application.']).forEach(function (text) { var p = document.createElement('p'); p.textContent = text; body.appendChild(p); });
+        var link = document.createElement('a'); link.href = 'https://www.nelf.gov.ng/terms'; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = 'Read official NELFUND terms'; body.appendChild(link);
+      }
+      if (typeof dialog.showModal === 'function') { if (!dialog.open) dialog.showModal(); }
+      else { dialog.hidden = false; dialog.setAttribute('open', ''); }
+      focus(byId('policy-dialog-close'));
+    }
+    function closePolicy() {
+      var dialog = byId('application-policy-dialog');
+      if (!dialog) return;
+      if (typeof dialog.close === 'function') dialog.close();
+      else { dialog.hidden = true; dialog.removeAttribute('open'); }
+      focus(dialogTrigger);
+    }
+    function stopConfetti() {
+      if (confettiFrame) window.cancelAnimationFrame(confettiFrame);
+      confettiFrame = 0;
+      var canvas = byId('application-confetti');
+      if (canvas) { var context = canvas.getContext('2d'); if (context) context.clearRect(0, 0, canvas.width, canvas.height); }
+    }
+    function confetti() {
+      stopConfetti();
+      if ((reducedMotion && reducedMotion.matches) || document.hidden) return;
+      var canvas = byId('application-confetti');
+      if (!canvas) return;
+      var bounds = canvas.getBoundingClientRect(), width = bounds.width, height = bounds.height;
+      if (!width || !height) return;
+      var ratio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
+      var context = canvas.getContext('2d'); if (!context) return;
+      context.scale(ratio, ratio);
+      var colors = ['#008A28', '#A9D9B2', '#CFD2D4', '#E2D8A3'];
+      var particles = Array.from({ length: 52 }, function () { return { x: width * .5, y: Math.min(115, height * .25), vx: (Math.random() - .5) * width * .75, vy: -70 - Math.random() * 150, rotation: Math.random() * 6.28, spin: (Math.random() - .5) * 9, size: 4 + Math.random() * 3, color: colors[Math.floor(Math.random() * colors.length)] }; });
+      var started = null;
+      function frame(timestamp) {
+        if (started === null) started = timestamp;
+        var elapsed = (timestamp - started) / 1000;
+        context.clearRect(0, 0, width, height);
+        if (elapsed > 1.8 || document.hidden || !model.submitted || model.summaryOpen) { confettiFrame = 0; return; }
+        context.globalAlpha = Math.min(1, (1.8 - elapsed) / .4);
+        particles.forEach(function (particle) {
+          context.save(); context.translate(particle.x + particle.vx * elapsed, particle.y + particle.vy * elapsed + 220 * elapsed * elapsed); context.rotate(particle.rotation + particle.spin * elapsed); context.fillStyle = particle.color; context.fillRect(-particle.size / 2, -particle.size / 3, particle.size, particle.size * .65); context.restore();
+        });
+        context.globalAlpha = 1;
+        confettiFrame = window.requestAnimationFrame(frame);
+      }
+      confettiFrame = window.requestAnimationFrame(frame);
+    }
+    function scrollToSuccess() {
+      var success = byId('application-success');
+      if (success) success.scrollIntoView({ block: 'start', behavior: reducedMotion && reducedMotion.matches ? 'instant' : 'smooth' });
+    }
+    function submitApplication() {
+      if (model.busy || model.submitted || !readyToSubmit()) return;
+      if (!validateContact(false) || !validateBank(false) || !bankIsVerified() || !documentsReady()) {
+        var message = byId('submission-error');
+        if (message) { message.hidden = false; message.textContent = 'Please review your details before submitting.'; }
+        return;
+      }
+      model.busy = true; paint(); announce('Submitting your application.');
+      later(function () {
+        model.busy = false; model.completed.review = true; model.submitted = true; model.open = null; model.summaryOpen = false;
+        paint(); scrollToSuccess(); announce('Application submitted. Your application is pending review.');
+        later(confetti, reducedMotion && reducedMotion.matches ? 0 : 100);
+      }, 900);
+    }
+    function reset() {
+      cancelTimers(); stopConfetti();
+      model = freshModel(); bankSignature = null;
+      initialValues.forEach(function (item) { item.field.value = item.value; });
+      fillStateOptions();
+      ['upkeep-choice', 'policy-agreement', 'terms-agreement', 'gsi-agreement'].forEach(function (id) { if (byId(id)) byId(id).checked = false; });
+      ['admission', 'student-id'].forEach(function (kind) { releaseFile(kind); fileErrors[kind] = ''; if (byId(fileId(kind))) byId(fileId(kind)).value = ''; paintFile(kind); });
+      contactIds.concat(bankIds).forEach(function (id) { error(id, ''); });
+      if (byId('submission-error')) { byId('submission-error').hidden = true; byId('submission-error').textContent = ''; }
+      var dialog = byId('application-policy-dialog'); if (dialog && dialog.open && typeof dialog.close === 'function') dialog.close();
+      paint();
+    }
+
+    // Ignore attempts to leave a simulated verification/submission mid-flight.
+    // Cancel the pending automatic transition on any user interaction, including
+    // interaction before the verification result has finished its letter wave.
+    document.addEventListener('pointerdown', cancelAutoAdvance, true);
+    document.addEventListener('keydown', cancelAutoAdvance, true);
+    root.addEventListener('click', cancelAutoAdvance, true);
+    root.addEventListener('click', function (event) {
+      if (!model.busy) return;
+      var actionable = event.target.closest('button, a, input, select');
+      if (actionable) { event.preventDefault(); event.stopImmediatePropagation(); }
+    }, true);
+    root.addEventListener('keydown', function (event) { if (model.busy && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
+    steps.forEach(function (name) { onClick(name + '-toggle', function () { open(name, true); }); });
+    onClick('contact-continue', function () { continueFrom('contact'); });
+    onClick('funding-continue', function () { continueFrom('funding'); });
+    onClick('bank-verify', verifyBank);
+    onClick('documents-continue', function () { continueFrom('documents'); });
+    onClick('application-submit', submitApplication);
+    onClick('view-application', function () { if (model.submitted) { stopConfetti(); model.summaryOpen = true; paint(); if (byId('submitted-summary')) byId('submitted-summary').scrollIntoView({ block: 'start', behavior: reducedMotion && reducedMotion.matches ? 'instant' : 'smooth' }); } });
+    onClick('back-to-success', function () { model.summaryOpen = false; paint(); scrollToSuccess(); });
+    onClick('restart-application', function () { reset(); if (core() && core().reset) core().reset(); });
+    onClick('policy-dialog-close', closePolicy);
+    var dialog = byId('application-policy-dialog');
+    if (dialog) dialog.addEventListener('close', function () { focus(dialogTrigger); });
+    root.querySelectorAll('[data-policy]').forEach(function (button) { button.addEventListener('click', function (event) { event.preventDefault(); if (!model.busy) showPolicy(button.dataset.policy, button); }); });
+    root.querySelectorAll('[data-edit-application]').forEach(function (button) { button.addEventListener('click', function (event) { event.preventDefault(); open(button.dataset.editApplication); }); });
+    contactIds.forEach(function (id) {
+      var field = byId(id); if (!field) return;
+      var handle = function () {
+        if (model.submitted) return;
+        if (id === 'residence-state') updateLocations('');
+        error(id, ''); invalidateFrom('contact'); paint();
+      };
+      field.addEventListener(field.tagName === 'SELECT' ? 'change' : 'input', handle);
+    });
+    bankIds.forEach(function (id) {
+      var field = byId(id); if (!field) return;
+      field.addEventListener(field.tagName === 'SELECT' ? 'change' : 'input', function () {
+        if (model.submitted) return;
+        cancelTimers();
+        error(id, ''); model.bankVerified = false; model.bankPhase = 'idle'; bankSignature = null; invalidateFrom('bank'); paint();
+      });
+    });
+    if (byId('upkeep-choice')) byId('upkeep-choice').addEventListener('change', function () { invalidateFrom('funding'); paint(); });
+    if (byId('policy-agreement')) byId('policy-agreement').addEventListener('change', function () { invalidateFrom('documents'); paint(); });
+    ['terms-agreement', 'gsi-agreement'].forEach(function (id) { if (byId(id)) byId(id).addEventListener('change', paint); });
+    ['admission', 'student-id'].forEach(function (kind) {
+      var id = fileId(kind), input = byId(id);
+      if (input) input.addEventListener('change', function () { if (input.files && input.files[0]) chooseFile(kind, input.files[0]); });
+      onClick(id + '-remove', function () { removeFile(kind); });
+      onClick(id + '-view', function () { if (files[kind]) window.open(files[kind].url, '_blank', 'noopener,noreferrer'); });
+    });
+    root.addEventListener('submit', function (event) {
+      var card = event.target.closest('[data-application-card]');
+      if (!card) return;
+      event.preventDefault();
+      if (model.busy || coreState().state !== 'application') return;
+      var name = card.dataset.applicationCard;
+      if (name === 'bank') verifyBank(); else if (name === 'review') submitApplication(); else continueFrom(name);
+    });
+    root.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' || event.repeat || event.isComposing || event.target.tagName === 'TEXTAREA' || event.target.tagName === 'SELECT' || event.target.tagName === 'BUTTON' || event.target.type === 'file' || event.target.type === 'checkbox') return;
+      var card = event.target.closest('[data-application-card]');
+      if (!card || coreState().state !== 'application') return;
+      event.preventDefault();
+      var name = card.dataset.applicationCard;
+      if (name === 'bank') verifyBank(); else if (name === 'review') submitApplication(); else continueFrom(name);
+    });
+    root.addEventListener('slas:statechange', function () {
+      var state = coreState();
+      if (state.state === 'intro') { reset(); return; }
+      if (!state.emailConfirmed) {
+        cancelTimers(); stopConfetti(); model.started = false; model.open = null; model.submitted = false; model.summaryOpen = false; model.bankVerified = false; model.bankPhase = 'idle'; bankSignature = null; invalidateFrom('contact');
+      } else if (state.state !== 'application') { cancelTimers(); }
+      paint();
+    });
+    document.addEventListener('visibilitychange', function () { if (document.hidden) { cancelAutoAdvance(); stopConfetti(); } });
+    if (reducedMotion && reducedMotion.addEventListener) reducedMotion.addEventListener('change', function () { if (reducedMotion.matches) stopConfetti(); });
+    if (window.ResizeObserver) { var observer = new ResizeObserver(measure); bodies.forEach(function (body) { if (body) observer.observe(body); }); }
+    window.addEventListener('resize', measure);
+    window.addEventListener('pagehide', function () { cancelTimers(); stopConfetti(); });
+    fillStateOptions();
+    window.slasApplication = Object.freeze({ start: start, goBack: goBack, progressStep: progressStep, getState: getState, reset: reset });
+    paint();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
+}());
+</script>
+  <script>/* Keep even a short tap visible. No scale, ripple, or delayed activation. */
+(function(){
+  function boot(){
+    var root=document.getElementById('prototype');
+    if(!root)return;
+    var active=null,started=0,timer=null;
+    function clear(){
+      clearTimeout(timer);
+      if(active){active.classList.remove('is-pressed');active.removeAttribute('data-press-surface');}
+      active=null;
+    }
+    function press(target){
+      var button=target.closest&&target.closest('button');
+      if(!button||!root.contains(button)||button.disabled)return;
+      clear();active=button;started=Date.now();
+      var background=getComputedStyle(button).backgroundColor;
+      if(background==='transparent'||background==='rgba(0, 0, 0, 0)')button.dataset.pressSurface='transparent';
+      button.classList.add('is-pressed');
+    }
+    function release(){
+      if(!active)return;
+      timer=setTimeout(clear,Math.max(0,150-(Date.now()-started)));
+    }
+    root.addEventListener('pointerdown',function(event){if(event.button===0)press(event.target);},{passive:true});
+    document.addEventListener('pointerup',release,{passive:true});
+    document.addEventListener('pointercancel',clear,{passive:true});
+    root.addEventListener('keydown',function(event){if(!event.repeat&&(event.key==='Enter'||event.key===' '))press(event.target);});
+    root.addEventListener('keyup',release);
+    window.addEventListener('blur',clear);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+}());
+</script>
+  <script>/* Group completed, closed sections without moving or duplicating their forms. */
+(function () {
+  'use strict';
+  function boot() {
+    var root = document.getElementById('prototype');
+    var stack = root && root.querySelector('.section-stack');
+    if (!stack || document.getElementById('completed-history')) return;
+    var expanded = false, scheduled = 0, lastRoute = null, listKey = '';
+    var definitions = [
+      ['citizenship', '.citizenship-card', 'citizenshipVerified', 'citizenshipOpen', 'citizenshipVisible'],
+      ['education', '#education-card', 'educationVerified', 'educationOpen'],
+      ['jamb', '#jamb-card', 'jambVerified', 'jambOpen'],
+      ['account', '#account-card', 'accountSubmitted', 'accountOpen', 'accountShown'],
+      ['email', '#email-card', 'emailConfirmed', 'emailOpen', 'emailShown']
+    ];
+    ['contact', 'funding', 'bank', 'documents', 'review'].forEach(function (name) { definitions.push([name, '#' + name + '-card']); });
+    var rows = definitions.map(function (definition) {
+      var card = root.querySelector(definition[1]);
+      var trigger = document.getElementById(definition[0] + '-toggle');
+      if (!card || !trigger) return null;
+      var label = trigger.querySelector('span:nth-child(2)');
+      return { id: definition[0], card: card, trigger: trigger, definition: definition, label: label ? label.textContent.trim() : trigger.textContent.trim() };
+    }).filter(Boolean);
+    var grayIcon = root.querySelector('.status-check-muted, .citizenship-unconfirmed');
+    function check() {
+      if (grayIcon) { var image = document.createElement('img'); image.src = grayIcon.src; image.alt = ''; image.width = 16; image.height = 16; return image; }
+      var span = document.createElement('span'); span.className = 'history-check-fallback'; span.textContent = '✓'; span.setAttribute('aria-hidden', 'true'); return span;
+    }
+    var card = document.createElement('section');
+    card.id = 'completed-history'; card.className = 'verification-card completed-history';
+    card.dataset.historyShown = 'false'; card.dataset.historyExpanded = 'false';
+    card.setAttribute('aria-label', 'Completed steps');
+    var toggle = document.createElement('button');
+    toggle.id = 'completed-history-toggle'; toggle.type = 'button'; toggle.className = 'completed-history-toggle';
+    toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', 'completed-history-list');
+    var label = document.createElement('span'); label.className = 'completed-history-label';
+    var chevron = document.createElement('span'); chevron.className = 'completed-history-chevron'; chevron.setAttribute('aria-hidden', 'true');
+    toggle.append(check(), label, chevron);
+    var list = document.createElement('ul'); list.id = 'completed-history-list'; list.className = 'completed-history-list';
+    list.inert = true; list.setAttribute('aria-hidden', 'true');
+    card.append(toggle, list); stack.prepend(card);
+
+    function state(row) {
+      var definition = row.definition;
+      if (definition[2]) return { complete: root.dataset[definition[2]] === 'true', open: root.dataset[definition[3]] === 'true', shown: !definition[4] || root.dataset[definition[4]] !== 'false' };
+      return { complete: row.card.dataset.complete === 'true', open: row.card.dataset.open === 'true', shown: row.card.dataset.shown === 'true' };
+    }
+    function measure() { card.style.setProperty('--history-height', (50 + Math.ceil(list.getBoundingClientRect().height)) + 'px'); }
+    function render() {
+      scheduled = 0;
+      var route = root.dataset.state + '|' + (root.dataset.state === 'application' ? root.dataset.applicationActive || '' : '');
+      if (lastRoute !== null && route !== lastRoute) expanded = false;
+      lastRoute = route;
+      var excluded = root.dataset.state === 'intro' || root.dataset.applicationSubmitted === 'true';
+      if (excluded) expanded = false;
+      var completed = rows.filter(function (row) { var current = state(row); return current.complete && current.shown; });
+      var grouped = completed.filter(function (row) { return !state(row).open; });
+      var shown = !excluded && completed.length >= 4 && grouped.length > 0;
+      var busy = root.getAttribute('aria-busy') === 'true' || root.dataset.applicationBusy === 'true';
+      rows.forEach(function (row) {
+        var hidden = shown && grouped.indexOf(row) !== -1;
+        if (hidden) row.card.dataset.historyHidden = 'true';
+        else if (row.card.hasAttribute('data-history-hidden')) row.card.removeAttribute('data-history-hidden');
+      });
+      card.dataset.historyShown = String(shown);
+      card.dataset.historyExpanded = String(shown && expanded);
+      card.inert = !shown; card.setAttribute('aria-hidden', String(!shown));
+      toggle.disabled = busy || !shown;
+      toggle.setAttribute('aria-expanded', String(shown && expanded));
+      label.textContent = 'Completed steps · ' + grouped.length;
+      toggle.setAttribute('aria-label', 'Completed steps, ' + grouped.length + (expanded ? ', collapse list' : ', expand list'));
+      list.inert = !shown || !expanded; list.setAttribute('aria-hidden', String(!shown || !expanded));
+      var nextKey = grouped.map(function (row) { return row.id + ':' + row.trigger.disabled; }).join('|');
+      if (listKey !== nextKey) {
+        listKey = nextKey; list.replaceChildren();
+        grouped.forEach(function (row) {
+          var item = document.createElement('li'), button = document.createElement('button'), text = document.createElement('span');
+          button.type = 'button'; button.className = 'completed-history-item'; button.dataset.historyTarget = row.id;
+          button.disabled = row.trigger.disabled; button.setAttribute('aria-label', row.label + ', completed, open section');
+          text.textContent = row.label; button.append(check(), text); item.appendChild(button); list.appendChild(item);
+          button.addEventListener('click', function () {
+            if (row.trigger.disabled) return;
+            expanded = false;
+            row.card.removeAttribute('data-history-hidden');
+            row.trigger.click();
+            render();
+          });
+        });
+      }
+      measure();
+    }
+    function schedule() { if (!scheduled) scheduled = window.requestAnimationFrame(render); }
+    toggle.addEventListener('click', function () { if (!toggle.disabled) { expanded = !expanded; render(); } });
+    root.addEventListener('slas:statechange', schedule);
+    var observer = new MutationObserver(schedule);
+    observer.observe(root, { attributes: true, attributeFilter: ['data-state', 'aria-busy', 'data-application-active', 'data-application-busy', 'data-application-submitted', 'data-citizenship-verified', 'data-citizenship-open', 'data-citizenship-visible', 'data-education-verified', 'data-education-open', 'data-jamb-verified', 'data-jamb-open', 'data-account-submitted', 'data-account-open', 'data-account-shown', 'data-email-confirmed', 'data-email-open', 'data-email-shown'] });
+    rows.forEach(function (row) { observer.observe(row.card, { attributes: true, attributeFilter: ['data-complete', 'data-open', 'data-shown'] }); });
+    if (window.ResizeObserver) { var resizeObserver = new ResizeObserver(measure); resizeObserver.observe(list); }
+    window.addEventListener('resize', schedule);
+    render();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true }); else boot();
+}());
+</script>
   
 <style>/* Real phone layout: Safari owns its chrome, keyboard and safe areas. */
 :root{background:#f1f1f1;color-scheme:light;--mobile-inset:24px}
@@ -1414,7 +2199,7 @@ body[data-screen=intro]{background:#fff}
 .jamb-summary .summary-row:first-of-type{padding-right:56px}
 .jamb-summary .summary-row:first-of-type .summary-value{white-space:normal}
 input,select{font-size:16px;scroll-margin-block:90px}
-input:read-only{pointer-events:none}
+input[readonly]{pointer-events:none}
 #prototype[data-state=intro]{padding:0;min-height:max(100svh,calc(656px + env(safe-area-inset-top) + env(safe-area-inset-bottom)))}
 .device[data-state=intro] .page-title{top:calc(265px + env(safe-area-inset-top));width:100%;padding:0 12px}
 #intro-screen{top:0;width:100%;height:max(100svh,calc(656px + env(safe-area-inset-top) + env(safe-area-inset-bottom)))}
@@ -1663,13 +2448,190 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
 #prototype[data-jamb-success-visible=false] .jamb-card .action-success{opacity:0}
 #prototype[data-state=jamb] .jamb-card .action-edit{opacity:1;transform:none}
 @media(prefers-reduced-motion:reduce){#prototype .account-pane,#prototype .auth-accordion-body{transition:none}}
+/* Figma98:24196: empty gray ring until the section is actually complete. */
+#prototype .citizenship-empty{opacity:1}
+#prototype[data-citizenship-verified=false] .citizenship-unconfirmed,
+#prototype[data-citizenship-verified=false] .citizenship-confirmed{opacity:0}
+#prototype[data-citizenship-verified=true] .citizenship-empty{opacity:0}
+#prototype[data-citizenship-verified=true][data-citizenship-open=true] .citizenship-confirmed{opacity:1}
+#prototype[data-citizenship-verified=true][data-citizenship-open=true] .citizenship-unconfirmed{opacity:0}
+#prototype[data-citizenship-verified=true][data-citizenship-open=false] .citizenship-confirmed{opacity:0}
+#prototype[data-citizenship-verified=true][data-citizenship-open=false] .citizenship-unconfirmed{opacity:1}
+
+/* Later application steps share the original accordion's geometry and motion. */
+#prototype .application-card{height:50px;position:relative;flex-shrink:0;transition:height var(--morph,560ms) var(--ease,cubic-bezier(.32,0,.2,1))}
+#prototype .application-card[data-shown=false]{display:none}
+#prototype .application-card[data-open=true]{height:var(--application-height,500px)}
+#prototype .application-card .section-trigger{top:15.5px;height:19px;line-height:19px}
+#prototype .application-card[data-open=true] .section-trigger{top:24px}
+#prototype .application-card .section-trigger>span:nth-child(2){min-width:0;flex:1}
+#prototype .application-body{position:absolute;top:55px;left:0;right:0;padding:0 var(--mobile-inset,24px) 24px;opacity:0;pointer-events:none;transition:opacity 120ms ease}
+#prototype .application-card[data-open=true] .application-body{opacity:1;pointer-events:auto;transition:opacity 210ms ease 120ms}
+.application-title{margin:0;color:#292929;font-family:Manrope,sans-serif;font-size:24px;font-weight:700;line-height:33px;letter-spacing:0;overflow-wrap:break-word}
+.application-fields{display:grid;gap:24px;margin-top:24px;min-width:0}
+.application-field{min-width:0}
+.application-field>label{display:flex;align-items:baseline;gap:0;min-height:22px;margin:0;color:#1d1d1d;font-size:14px;font-weight:600;line-height:22px}
+.application-field .control-wrap{height:48px;margin-top:4px}
+.application-field input,.application-field select,.application-field textarea{display:block;width:100%;height:48px;min-width:0;max-width:100%;padding:0 12px;border:1px solid #e5e5e6;border-radius:14px;background:#fff;color:#262626;font-family:Manrope,sans-serif;font-size:16px;font-weight:400;line-height:24px;caret-color:#027b22;scroll-margin-block:90px}
+.application-field select{padding-right:40px}
+.application-field input:focus,.application-field select:focus,.application-field textarea:focus{outline:none;border-color:#027b22;box-shadow:0 0 0 1px #027b2229}
+.application-field [aria-invalid=true]{border-color:#c43226}
+.application-field .application-textarea-wrap{height:80px}
+.application-field textarea{height:80px;padding:12px;resize:none}
+.application-textarea-wrap.continuous-corners textarea{border-radius:0;border-color:transparent!important;box-shadow:none!important}
+.application-field input:disabled,.application-field select:disabled{background:#f4f4f5;border-color:#e5e5e6;color:#262626;-webkit-text-fill-color:#262626;opacity:1}
+.application-optional{margin-left:4px;color:#80858a;font-weight:400}
+.application-caption{margin:0;color:#696969;font-size:12px;font-weight:400;line-height:18px;overflow-wrap:anywhere}
+.application-field-hint{margin:4px 4px 0}
+.application-field-error{margin:8px 0 0;color:#b42318;font-size:12px;line-height:18px;overflow-wrap:anywhere}
+.application-field-error[hidden],.application-file-info[hidden],.bank-result[hidden],#review-upkeep-period[hidden]{display:none!important}
+#prototype .application-action,.application-policy-dialog .application-action{position:relative;left:auto;right:auto;top:auto;display:grid;place-items:center;width:100%;height:48px;min-height:48px;margin:32px 0 0;padding:0 12px;border:1px solid transparent;border-radius:14px;font-family:Manrope,sans-serif;font-size:16px;font-weight:600;line-height:24px}
+#prototype .application-action:disabled{background:#f4f4f5;border-color:#e5e5e6;color:#80858a}
+#prototype .application-action[aria-busy=true]{background:#f4f4f5;border-color:#e5e5e6;color:#292929}
+#prototype .application-field-error:not([hidden])+.application-action{margin-top:16px}
+#prototype .application-secondary{margin-top:8px;background:#f4f4f5;border-color:#e5e5e6;color:#262626}
+.application-subtitle{margin:0;color:#292929;font-size:16px;line-height:24px;font-weight:600}
+.application-line{display:flex;justify-content:space-between;align-items:center;gap:12px;min-width:0}
+.application-text-button{border:0;background:transparent;padding:0;color:#027b22;text-align:left;font-family:Manrope,sans-serif;font-size:14px;font-weight:600;line-height:22px;min-height:24px;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.application-text-button:disabled{color:#80858a}
+.application-record{min-width:0;margin:0}
+#contact-body>.application-record{margin-top:24px}
+.application-record>summary{position:relative;display:block;list-style:none;padding:0 24px 0 0;min-height:24px;color:#292929;font-size:16px;font-weight:600;line-height:24px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.application-record>summary::-webkit-details-marker{display:none}
+.application-record>summary::after{content:"";position:absolute;right:3px;top:7px;width:7px;height:7px;border-right:1.5px solid #80858a;border-bottom:1.5px solid #80858a;transform:rotate(45deg);transition:transform 180ms ease}
+.application-record[open]>summary::after{top:10px;transform:rotate(225deg)}
+.application-record>summary:focus-visible{outline:2px solid #027b22;outline-offset:4px;border-radius:2px}
+.application-record-list{display:grid;gap:16px;min-width:0;margin:20px 0 0}
+.application-record-list>div{min-width:0}
+.application-record-list dt{margin:0;color:#696969;font-size:12px;line-height:18px;font-weight:400}
+.application-record-list dd{margin:2px 0 0;color:#262626;font-size:16px;line-height:24px;font-weight:400;overflow-wrap:anywhere}
+.application-choice{display:flex;align-items:flex-start;gap:12px;min-width:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.application-choice>input[type=checkbox]{appearance:auto;-webkit-appearance:checkbox;display:block;flex:0 0 20px;width:20px;height:20px;min-width:20px;margin:2px 0 0;padding:0;border:1px solid #b7b7b7;border-radius:5px;accent-color:#038725;box-shadow:none;cursor:pointer;scroll-margin-block:90px}
+.application-choice>input[type=checkbox]:focus-visible{outline:2px solid #027b22;outline-offset:3px}
+.application-choice-copy{display:block;min-width:0;color:#262626;font-size:14px;line-height:22px;font-weight:400}
+.application-choice-copy>span{display:block}
+.application-choice-copy .application-subtitle{margin:0 0 4px}
+.funding-tuition .funding-amount{margin:8px 0;font-size:24px;font-weight:700;line-height:33px}
+.funding-monthly{font-size:16px;line-height:24px;color:#262626}
+.funding-choice .application-caption{margin-top:4px}
+.funding-explanation{margin-top:-12px;padding-left:32px}
+.application-total{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding-top:24px;border-top:1px solid #ededed;color:#292929;font-size:14px;line-height:22px}
+.application-total>span{min-width:0}
+.application-total strong{font-size:20px;line-height:28px;font-weight:700;white-space:nowrap}
+.application-agreement{position:relative;min-width:0}
+.application-policy-link{display:block;margin:0 0 0 32px}
+.application-agreement-note{margin:6px 0 4px 32px}
+.application-file-control input[type=file]{height:48px;padding:0 8px 0 0;color:#696969;font-size:12px;line-height:46px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.application-file-control input[type=file]::file-selector-button{height:46px;margin:0 8px 0 0;padding:0 12px;border:0;border-right:1px solid #ededed;background:#f4f4f5;color:#292929;font-family:Manrope,sans-serif;font-size:14px;line-height:22px;font-weight:500;cursor:pointer}
+.application-file-control input[type=file]{position:absolute;inset:0;z-index:2;opacity:0;cursor:pointer}
+.application-file-picker-copy{display:flex;align-items:center;height:48px;border:1px solid #e5e5e6;border-radius:14px;overflow:hidden;pointer-events:none;color:#696969;font-size:12px;line-height:18px}
+.application-file-picker-copy>span:first-child{display:grid;place-items:center;flex:none;align-self:stretch;padding:0 12px;background:#f4f4f5;border-right:1px solid #ededed;font-size:14px;font-weight:500;color:#292929}
+.application-file-picker-copy>span:last-child{display:block;min-width:0;padding:0 10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.continuous-corners .application-file-picker-copy{border-color:transparent;border-radius:0}
+.application-file-info{display:flex;align-items:flex-start;flex-direction:column;gap:8px;margin-top:12px;min-width:0}
+.application-file-name{max-width:100%;font-size:14px;line-height:22px;overflow-wrap:anywhere}
+.application-file-actions{display:flex;gap:20px}
+.application-file-actions button:last-child{color:#696969}
+.application-review-group{position:relative;padding-right:44px;min-width:0}
+.application-review-edit{position:absolute;right:0;top:0}
+.application-review-funding{min-width:0}
+.application-amount-list{display:grid;gap:12px;margin:16px 0 0}
+.application-amount-list>div{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:14px;line-height:22px}
+.application-amount-list dt{margin:0;color:#696969}
+.application-amount-list dd{margin:0;color:#262626;white-space:nowrap}
+.application-review-funding>.application-caption{margin-top:4px}
+.application-review-funding>.application-total{margin-top:24px}
+.application-repayment{margin:16px 0 0;font-size:12px;line-height:18px;color:#696969}
+.application-repayment a,.application-policy-dialog a{color:#027b22;text-underline-offset:3px}
+.bank-result{margin-top:24px}
+#bank-status{display:inline-block;margin-left:5px;vertical-align:baseline}
+#bank-status .wave-dots{display:inline-flex;white-space:nowrap}
+#bank-card[data-bank-phase=verifying] .wave-dots i{font-style:normal;animation:dot-wave 1080ms cubic-bezier(.37,0,.63,1) infinite}
+#bank-card[data-bank-phase=verifying] .wave-dots i:nth-child(2){animation-delay:130ms}
+#bank-card[data-bank-phase=verifying] .wave-dots i:nth-child(3){animation-delay:260ms}
+#bank-status .verified-word{opacity:1}
+#bank-status .verified-letter{display:inline-block}
+#bank-card[data-bank-phase=wave] #bank-status .verified-letter{animation:verified-letter-wave 650ms cubic-bezier(.37,0,.63,1) both;animation-delay:calc(var(--letter) * 55ms)}
+#bank-card[data-bank-phase=green] #bank-status .verified-letter{color:#027b22}
+#prototype .application-card .status-check,#prototype .application-card .status-check-muted{opacity:0;transform:scale(.85)}
+#prototype .application-card[data-complete=true] .status-empty{opacity:0;transform:scale(.85)}
+#prototype .application-card[data-complete=true][data-open=true] .status-check{opacity:1;transform:scale(1)}
+#prototype .application-card[data-complete=true][data-open=false] .status-check-muted{opacity:1;transform:scale(1)}
+#prototype .application-card[data-open=false] .chevron-open{opacity:0;transform:rotate(180deg)}
+#prototype .application-card[data-open=false] .chevron-closed{opacity:1;transform:none}
+#prototype .application-card[data-open=true] .chevron-open{opacity:1;transform:none}
+#prototype .application-card[data-open=true] .chevron-closed{opacity:0;transform:rotate(-180deg)}
+#prototype .application-card .section-trigger:disabled .chevrons{opacity:0}
+#application-success,#submitted-summary{position:relative;flex-shrink:0;padding:32px var(--mobile-inset,24px) 24px;height:auto;min-width:0}
+#application-success[hidden],#submitted-summary[hidden]{display:none!important}
+#prototype[data-application-submitted=true] .section-stack>:not(#application-success):not(#submitted-summary):not(#application-confetti):not(dialog){display:none!important}
+.application-success-icon{display:grid;place-items:center;width:64px;height:64px;margin:0 auto 24px;border-radius:50%;background:#e9f5eb;color:#038725}
+.application-success .application-title{text-align:center}
+.application-success-description{margin:12px 0 0;text-align:center;font-size:16px;line-height:24px;color:#696969}
+.application-submission-details{display:grid;gap:16px;margin:32px 0 0}
+.application-submission-details>div{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
+.application-submission-details dt{margin:0;color:#696969;font-size:14px;line-height:22px}
+.application-submission-details dd{margin:0;color:#292929;font-size:14px;line-height:22px;font-weight:600;text-align:right;overflow-wrap:anywhere}
+.application-submitted-caption{margin-top:8px}
+.application-submitted-summary>.application-record-list{margin-top:24px}
+.application-submitted-amounts{margin-top:32px}
+.application-submitted-summary>.application-total{margin-top:24px}
+#application-confetti{display:block;position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:1000}
+.application-policy-dialog{position:fixed;width:calc(100% - 32px);max-width:390px;max-height:calc(100svh - 48px);padding:24px;border:0;border-radius:24px;color:#292929;background:#fff;overflow:auto;font-family:Manrope,sans-serif}
+.application-policy-dialog::backdrop{background:rgba(0,0,0,.28)}
+#policy-dialog-body{margin-top:24px;color:#262626;font-size:14px;line-height:22px;overflow-wrap:anywhere}
+#policy-dialog-body p{margin:0 0 16px}
+#policy-dialog-body p:last-child{margin-bottom:0}
+@media(max-width:349px){.application-title{font-size:21px;line-height:29px}.application-total strong{font-size:18px}.application-card .section-trigger{font-size:13px}.application-success .application-title{font-size:23px;line-height:32px}}
+@media(prefers-reduced-motion:reduce){#prototype .application-card,#prototype .application-body,.application-record>summary::after{transition:none}#application-confetti{display:none}#bank-card[data-bank-phase=verifying] .wave-dots i,#bank-status .verified-letter{animation:none!important}}
+
+/* Desktop review phone scrolls its content beneath persistent browser chrome. */
+#prototype:not([data-mobile-layout=true]) .section-stack{max-height:541px;overflow:auto;scrollbar-width:none;overscroll-behavior:contain}
+#prototype:not([data-mobile-layout=true]) .section-stack::-webkit-scrollbar{display:none}
+#prototype[data-mobile-layout=true] .section-stack{max-height:none;overflow:visible;overscroll-behavior:auto}
+#prototype[data-application-submitted=true] #flow-progress{visibility:hidden;pointer-events:none}
+#prototype[data-application-submitted=true][data-mobile-layout=true]{padding-top:calc(64px + env(safe-area-inset-top))}
+#prototype[data-application-submitted=true]:not([data-mobile-layout=true]) .section-stack{top:173px;max-height:590px}
+#prototype .application-action[hidden],#prototype .account-action[hidden]{display:none!important}
+/* A confirmed technical check holds briefly, then opens the following section. */
+#prototype .education-action[hidden]{display:none!important}
+#prototype[data-education-open=true][data-education-success-visible=true] .education-card{height:252px}
+#prototype[data-email-confirmed=true] .email-actions{display:none}
+#prototype[data-education-verified=true] .jamb-card .chevrons{opacity:1}
+
+/* A small, steady press response without changing button geometry. */
+#prototype button:not(:disabled):active,
+#prototype button.is-pressed:not(:disabled){filter:brightness(.91)}
+#prototype button.is-pressed[data-press-surface=transparent]:not(:disabled){background-color:rgba(0,0,0,.045)}
+#prototype button[data-press-surface=transparent]{border-radius:8px}
+@media(prefers-reduced-motion:reduce){#prototype button.is-pressed{transition:none}}
+
+/* Completed rows stay mounted; only the compact history owns their visible space. */
+#prototype .completed-history{position:relative;flex-shrink:0;height:50px;background:#fff;border-radius:24px;overflow:hidden;transition:height var(--morph,560ms) var(--ease,cubic-bezier(.32,0,.2,1)),margin-top var(--morph,560ms) var(--ease,cubic-bezier(.32,0,.2,1)),opacity 180ms ease}
+#prototype .completed-history[data-history-expanded=true]{height:var(--history-height,50px)}
+#prototype .completed-history[data-history-shown=false]{height:0;margin-top:-4px;opacity:0;visibility:hidden;pointer-events:none}
+#prototype .completed-history-toggle{position:relative;display:flex;align-items:center;gap:8px;width:100%;height:50px;padding:0 var(--mobile-inset,24px);border:0;background:transparent;color:#80858a;text-align:left;font-family:Manrope,sans-serif;font-size:14px;font-weight:500;line-height:19px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#prototype .completed-history-toggle>img,#prototype .completed-history-item>img{flex:0 0 16px;width:16px;height:16px}
+.completed-history-label{flex:1;min-width:0}
+.completed-history-chevron{flex:0 0 7px;width:7px;height:7px;margin-right:4px;border-right:1.5px solid #80858a;border-bottom:1.5px solid #80858a;transform:translateY(-2px) rotate(45deg);transition:transform 240ms ease}
+[data-history-expanded=true] .completed-history-chevron{transform:translateY(2px) rotate(225deg)}
+#prototype .completed-history-list{position:absolute;top:50px;left:0;right:0;margin:0;padding:0 var(--mobile-inset,24px) 12px;list-style:none;opacity:0;visibility:hidden;pointer-events:none;transition:opacity 120ms ease,visibility 0ms 120ms}
+#prototype .completed-history[data-history-expanded=true] .completed-history-list{opacity:1;visibility:visible;pointer-events:auto;transition:opacity 210ms ease 120ms,visibility 0ms}
+#prototype .completed-history-list>li{margin:0;padding:0}
+#prototype .completed-history-item{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;margin:0;padding:10px 0;border:0;background:transparent;color:#80858a;text-align:left;font-family:Manrope,sans-serif;font-size:14px;font-weight:500;line-height:20px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#prototype .completed-history-item>span{min-width:0;overflow-wrap:anywhere}
+#prototype .completed-history-toggle:disabled,#prototype .completed-history-item:disabled{cursor:default;opacity:1}
+#prototype .completed-history-toggle:focus-visible,#prototype .completed-history-item:focus-visible{outline:2px solid #027b22;outline-offset:-3px;border-radius:8px}
+.history-check-fallback{display:grid;place-items:center;flex:0 0 16px;width:16px;height:16px;border-radius:50%;background:#cacbcc;color:#fff;font-size:11px;line-height:16px}
+#prototype .section-stack [data-history-hidden=true]{height:0!important;min-height:0!important;margin-top:-4px!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;overflow:hidden!important}
+@media(prefers-reduced-motion:reduce){#prototype .completed-history,#prototype .completed-history-list,.completed-history-chevron{transition:none}}
 </style></head>
 <body>
   <main class="studio">
 
 
     <div class="device-wrap">
-      <div class="device" id="prototype" data-state="intro" data-education-open="false" data-jamb-open="false" data-education-verified="false" data-jamb-verified="false" data-complete="false" aria-label="SLAS student verification prototype">
+      <div class="device" id="prototype" data-mobile-layout="true" data-state="intro" data-education-open="false" data-jamb-open="false" data-education-verified="false" data-jamb-verified="false" data-complete="false" aria-label="SLAS student verification prototype">
 
         <div class="app-nav">
           <button class="back-button" id="back-prototype" aria-label="Back"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAACNklEQVR4nO3c3y0EYRSG8Xcn7v2pwO1e2aiACuiADlABOqACq4ENFdgOKEEHbAXkS+bCxRLz7WbeM2efJ5m4YCM5P2THnJnReDwW+WqM35sA8AeAOQDMAWAOAHMAmAPAHADmADAHgDkAzAFgDgBzAJgDwBwA5gAwB4A5AMxtKW5Hkk4lfUqat0e6RgG3InYlzVqAn91JulKymoDDf1ky/NJle6SqCTj8gz++5kLJagY0/NK+ktUMaPilNyWrGdDwS/dKVjOg4d9KmipZzYCGf6OEOQAYvhGA4RsBGL4RgOEbARi+EYDhGwEYvhGA4RsBGL4RgOEbARi+EYDhGwEYvhGA4RsBug6/dC3pK+HxVHu5dBWAWcfhZ+5E0msNQi3A+S+rI5vcjqSHvgAmla/L3qQvgO3K123Cb0EvAI+Vr8vec18AaZdlV+ijZnVylXdBpxkXpSoHX34YDyW99wmwaN8JdUEoJ2KjZMeepOOa4a/jTLgrQjkR40x4zf8LAiHAf0NBCHA9AIQAV8RACHBNGIQAWxEgBNgLAiHAZhwIAXZDQQiwHQ1CgPsDQAhwhwwIAe4RAyHAXZIgBLhPeFGBULYxUuW+U37REeFMyXIDdEVItw4TAaALQtVlv8hFAfgvAg/r6AlhvuRz04wP64j40L5Fu2Vw0n5Uu32ccg8p4kP7Nqpof4I2LgDMAWAOAHMAmAPAHADmADAHgDkAzAFgDgBzAJgDwBwA5gAwB4A5AMwBYA4AefsGvlm2c7wnbDMAAAAASUVORK5CYII=" alt="" width="24" height="24"></button>
@@ -1708,7 +2670,7 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
         <div class="section-stack">
           <section class="citizenship-card" aria-label="Nigerian citizenship">
             <button class="compact-row" id="citizenship-toggle" aria-label="Nigerian citizenship" aria-expanded="false">
-              <span class="citizenship-icons"><img class="citizenship-confirmed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="citizenship-unconfirmed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
+              <span class="citizenship-icons"><img class="citizenship-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="citizenship-confirmed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="citizenship-unconfirmed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
               <span>Nigerian citizenship</span>
               <img class="chevron" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB2klEQVR4nOXarZLCQBAE4KbrBC64OHDIOCQOicTxbEjegDdAokBG4nDgQOVqUpcruCP8JNnJXfXnQlWSmYbNZrfoZFmWQRghjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYS4jzon7/d7bLdbXC4XTCYT9Ho9eDgej1iv1/l9h8MhkiTxD2C322G1Wt2EMZ/PEccxQjocDlgulzifz/lxmqaIogiDwcB3CKRpenNsBVlhVqBX84XNZlP5mqx6Yrfb/fWZFbZYLPJfR9PsmveaL6sleADj8bj0xjY0mgyhGG5lzVst7gFEUZSP+dAh/HzWXLN7Ww1WSyvTYBzHQUN41Lxp4qHLWmd/hWBTYJmqITxrfjqdNjLjsPYVgHwetoKaCuGV5uvM/UHeBJOGQvBsvvFX4boheDcfZC1QNYQ2mg+2GHo3hLaar70YeqQouKyx68/bat50Qv9L7Nm3+0jo5l32A54Nhzabd9sQeTcEr+Zdd4ReDcGzeZdnwKtreltPzGYz9Pt9z3LgHsC9EIpVXejdpD8TgDmdTt87OaPRqNaS9l8G8FcQ4ghxhDhCHCGOEEeII8QR4ghxhDhCHCGOEEeII8QR4th2AW37BIDR/AbM1QX6AAAAAElFTkSuQmCC" alt="" width="16" height="16">
             </button>
@@ -1760,7 +2722,7 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
           <section class="verification-card jamb-card" id="jamb-card">
             <button class="section-trigger" id="jamb-toggle" aria-expanded="false" aria-controls="jamb-body" disabled>
               <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="status-check-muted" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
-              <span>JUMB registration</span>
+              <span>JAMB registration</span>
               <span class="chevrons"><img class="chevron-open" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABqUlEQVR4nOWZsa6CMBiFjycmuuHm5sioi6w8gW/A8/EGbjoyOnX0Ddh0Y8P8JjfxGvWSCPxczpeQtKVpe07+kv5lUtd1DWEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcaZeE18uF5xOp3t5u91isVi4rGPi8V+gLEvkeY6qqu71+XyOLMuwXC7HvwXKJ/GGla3N3o06AkII2O/3H/vsdjus1+vxRUBoIN6wPtZ3VAaEhuI9TODQxPdtAj3F2363x9OEqaf4x4/du74/7V19GDkE8Vb2igR6i/c2gUMQ72kChyLeywQOSbyHCfx2ADu/tym+qQnH47GV3IFtJDZdnes/mdBWAsVv8vnnrK6LpKaJCbaW3g0oiuKleMvt287o/jLB1tL7SbB6I76riw0zwcZ9FXXvorDTCEiS5Fe9j1sdG9vmsLkeiePY50IkhIDz+YzZbIY0TRFFEfrger3icDjc591sNlitVv/rTnBIEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDi0HsB3twAgQb9vcYNrjsAAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="chevron-closed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB2klEQVR4nOXarZLCQBAE4KbrBC64OHDIOCQOicTxbEjegDdAokBG4nDgQOVqUpcruCP8JNnJXfXnQlWSmYbNZrfoZFmWQRghjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYS4jzon7/d7bLdbXC4XTCYT9Ho9eDgej1iv1/l9h8MhkiTxD2C322G1Wt2EMZ/PEccxQjocDlgulzifz/lxmqaIogiDwcB3CKRpenNsBVlhVqBX84XNZlP5mqx6Yrfb/fWZFbZYLPJfR9PsmveaL6sleADj8bj0xjY0mgyhGG5lzVst7gFEUZSP+dAh/HzWXLN7Ww1WSyvTYBzHQUN41Lxp4qHLWmd/hWBTYJmqITxrfjqdNjLjsPYVgHwetoKaCuGV5uvM/UHeBJOGQvBsvvFX4boheDcfZC1QNYQ2mg+2GHo3hLaar70YeqQouKyx68/bat50Qv9L7Nm3+0jo5l32A54Nhzabd9sQeTcEr+Zdd4ReDcGzeZdnwKtreltPzGYz9Pt9z3LgHsC9EIpVXejdpD8TgDmdTt87OaPRqNaS9l8G8FcQ4ghxhDhCHCGOEEeII8QR4ghxhDhCHCGOEEeII8QR4th2AW37BIDR/AbM1QX6AAAAAElFTkSuQmCC" alt="" width="16" height="16"></span>
             </button>
             <div class="section-body" id="jamb-body" inert aria-hidden="true">
@@ -1778,15 +2740,15 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
               </div>
               <div class="jamb-summary" aria-label="Verified student profile">
                 <img class="student-avatar" src="data:image/webp;base64,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" alt="Student profile" width="44" height="44">
-                <div class="summary-row"><span class="summary-label">Name</span><span class="summary-value">Kelechi Adunaro</span></div>
-                <div class="summary-row"><span class="summary-label">NIN</span><span class="summary-value">12345678901</span></div>
+                <div class="summary-row"><span class="summary-label">Name</span><span class="summary-value" id="verified-student-name">Kelechi Adunaro</span></div>
+                <div class="summary-row"><span class="summary-label">NIN</span><span class="summary-value" id="verified-student-nin">12345678901</span></div>
                 <div class="summary-row"><span class="summary-label">JAMB Reg No.</span><span class="summary-value" data-value-for="jamb-number">2026123456AB</span><button class="edit-button" data-edit="jamb" data-focus="jamb-number" aria-label="Edit JAMB registration number"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACcUlEQVR4nOWaQUsbQRiG33wI2ZObU5KLmoOI0GI9W4KFClKp6EGw0EN/Sy+99Ff0ULDQQwVpK0pFaO+L9iD1ovGyGy/ZnjaXpkxgodJNGJPMzDcz7y3LZmefh5lhv5kp9Xq9HjwOwfMQPA/B8xA8D8HzEDwPwfMQPA/B80yBabKsi7idII5v+78bjRnUq1U/BMRJGx8+fkInTe9cX1yYx/raU1Qq0xNrq8StFhDw797v9XtAUSphiFcvX0xMAsEieBHRK8Q9nc5vtwTEEvAqJJQ4DIHo7CcOj78VwgdBWelwIDCA3z/4MhBeAK42HyvrCQQG8EXJ4eu1Kp40V5RJIDCHz6NKAsECeJUSCJbAq5JAsAhehQSCZfCTlkCwEH6SEgiWwstK2D/4bE5ApBheRsJV6wZxu61fQKQJXkZCHGsWEGmG/3e9oChZN9MnIDIEn1eTRanXanoERIbhiwoqUTE2ZmfUC4gYwot2d3e2h/6fXIUXkWmXXIXfer4h1S65Cr+89EDqWeQz/MgCXIEfSYBL8PcW4Br8vQRc/Lp0Dl5agHgJF+GlBIgFhWFfWjbDSwk4/f7DWXgpAVfXLWfh5YZA+v+a2mpzxQn4kT+EgnIAF+BZbI6ahGchwCS8cQGm4Y0K4ABvTAAXeCMCOMFrF8ANXqsAjvDaBHCFH/mo7HXrRhywk77/8OhkIHx/06L0B9H5OcaN2ATJU6/W+jXL2OcEX795CxsjW7ARHI3ocYMWcbwQkM89YwuYG7KxyD2Plh6OPwd00hRfj06QJAmyblfqMLPpsR+UywjDENubz+5MjGwPS5sMwfMQPA+ZfgHT+Qsgx3CF4+FbHAAAAABJRU5ErkJggg==" alt="" width="16" height="16"></button></div>
               </div>
               <p class="field-error" id="jamb-error" hidden></p>
               <button class="action-button jamb-action" id="jamb-action">
                 <span class="action-label action-edit">Verify JAMB details</span>
                 <span class="action-label action-busy"><img class="spinner" src="data:image/png;base64,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" alt="" width="16" height="16"><span>Verifying status<span class="wave-dots button-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></span></span>
-                <span class="action-label action-success">Continue</span>
+                <span class="action-label action-success">Confirm details</span>
               </button>
             </div>
           </section>
@@ -1851,6 +2813,195 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
   </form>
 </section>
 
+<!-- APPLICATION CONTINUATION START -->
+<!-- Application sections continue the same mounted accordion after email confirmation. -->
+<section class="verification-card application-card" id="contact-card" data-application-card="contact" data-open="false" data-complete="false" data-shown="false" aria-labelledby="contact-title">
+  <button class="section-trigger" type="button" id="contact-toggle" aria-expanded="false" aria-controls="contact-body" disabled>
+    <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="status-check-muted" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
+    <span>Personal details</span><span class="chevrons"><img class="chevron-open" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABqUlEQVR4nOWZsa6CMBiFjycmuuHm5sioi6w8gW/A8/EGbjoyOnX0Ddh0Y8P8JjfxGvWSCPxczpeQtKVpe07+kv5lUtd1DWEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcaZeE18uF5xOp3t5u91isVi4rGPi8V+gLEvkeY6qqu71+XyOLMuwXC7HvwXKJ/GGla3N3o06AkII2O/3H/vsdjus1+vxRUBoIN6wPtZ3VAaEhuI9TODQxPdtAj3F2363x9OEqaf4x4/du74/7V19GDkE8Vb2igR6i/c2gUMQ72kChyLeywQOSbyHCfx2ADu/tym+qQnH47GV3IFtJDZdnes/mdBWAsVv8vnnrK6LpKaJCbaW3g0oiuKleMvt287o/jLB1tL7SbB6I76riw0zwcZ9FXXvorDTCEiS5Fe9j1sdG9vmsLkeiePY50IkhIDz+YzZbIY0TRFFEfrger3icDjc591sNlitVv/rTnBIEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDi0HsB3twAgQb9vcYNrjsAAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="chevron-closed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB2klEQVR4nOXarZLCQBAE4KbrBC64OHDIOCQOicTxbEjegDdAokBG4nDgQOVqUpcruCP8JNnJXfXnQlWSmYbNZrfoZFmWQRghjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYS4jzon7/d7bLdbXC4XTCYT9Ho9eDgej1iv1/l9h8MhkiTxD2C322G1Wt2EMZ/PEccxQjocDlgulzifz/lxmqaIogiDwcB3CKRpenNsBVlhVqBX84XNZlP5mqx6Yrfb/fWZFbZYLPJfR9PsmveaL6sleADj8bj0xjY0mgyhGG5lzVst7gFEUZSP+dAh/HzWXLN7Ww1WSyvTYBzHQUN41Lxp4qHLWmd/hWBTYJmqITxrfjqdNjLjsPYVgHwetoKaCuGV5uvM/UHeBJOGQvBsvvFX4boheDcfZC1QNYQ2mg+2GHo3hLaar70YeqQouKyx68/bat50Qv9L7Nm3+0jo5l32A54Nhzabd9sQeTcEr+Zdd4ReDcGzeZdnwKtreltPzGYz9Pt9z3LgHsC9EIpVXejdpD8TgDmdTt87OaPRqNaS9l8G8FcQ4ghxhDhCHCGOEEeII8QR4ghxhDhCHCGOEEeII8QR4th2AW37BIDR/AbM1QX6AAAAAElFTkSuQmCC" alt="" width="16" height="16"></span>
+  </button>
+  <div class="application-body" id="contact-body" aria-hidden="true" inert>
+    <h2 class="application-title" id="contact-title">Your details</h2>
+    <details class="application-record">
+      <summary>Student record</summary>
+      <dl class="application-record-list">
+        <div><dt>Full name</dt><dd data-record="name">Kelechi Adunaro</dd></div>
+        <div><dt>Date of birth</dt><dd data-record="dob">14/03/2005</dd></div>
+        <div><dt>Gender</dt><dd>Male</dd></div>
+        <div><dt>National Identification Number</dt><dd data-record="nin">12345678901</dd></div>
+        <div><dt>Email</dt><dd data-record="email">kelechi.adunaro@example.com</dd></div>
+        <div><dt>State / LGA of origin</dt><dd>Lagos / Surulere</dd></div>
+        <div><dt>Institution</dt><dd data-record="institution">University of Lagos</dd></div>
+        <div><dt>Matriculation number</dt><dd data-record="matric">2026/01234</dd></div>
+        <div><dt>JAMB registration number</dt><dd data-record="jamb">2026123456AB</dd></div>
+        <div><dt>Programme</dt><dd>Computer Science</dd></div>
+        <div><dt>Faculty</dt><dd>Faculty of Science</dd></div>
+        <div><dt>Department</dt><dd>Department of Computer Science</dd></div>
+        <div><dt>Study type / Level</dt><dd>Full-time / 300</dd></div>
+        <div><dt>Academic session</dt><dd>2026/2027</dd></div>
+      </dl>
+    </details>
+    <div class="application-fields">
+      <div class="application-field">
+        <label for="phone">Phone number<span class="required">*</span></label>
+        <div class="control-wrap"><input id="phone" name="phone" type="tel" inputmode="tel" maxlength="11" autocomplete="tel-national" value="08012345678" aria-describedby="phone-error" required></div>
+        <p class="application-field-error" id="phone-error" role="alert" hidden></p>
+      </div>
+      <div class="application-field">
+        <label for="address">Residential address<span class="required">*</span></label>
+        <div class="control-wrap application-textarea-wrap"><textarea id="address" name="address" rows="2" autocomplete="street-address" aria-describedby="address-error" required>12 Palm Avenue</textarea></div>
+        <p class="application-field-error" id="address-error" role="alert" hidden></p>
+      </div>
+      <div class="application-field">
+        <label for="residence-state">State of residence<span class="required">*</span></label>
+        <div class="control-wrap"><select id="residence-state" name="residence-state" aria-describedby="residence-state-error" required><option value="Lagos" selected>Lagos</option></select><img class="select-caret" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABl0lEQVR4nO3aPY7CMBiE4ZfRNqm5Ay0ttNyBksvBPWhDCyV3oIYuq0S7K5AIf44/F7OPhARBQZ5BCbbFqGmaBmPCnDAnzAlzwpwwJ8wJc8KcMCfMCXPCnDAnzAlzwpwwJ8wJc8LcV8rJ+/2euq6758vlkvF4TITj8ch2u+VyuTCbzbpHeAG73Y71ev33+nA4sFqtmM/n5NQWvtlsbsqoqorpdBp7CdQ/3/y1dmD3jucK/2gs2Quoquru8Vwl9IVPpU9PXCwWve8NXcKz8O39J7yAyWTSXfO5S3gWvh1Dys1XH58J3Q0vZwmvhE+96Srp7IwlRIQfbCI0dAlR4QedCQ5VQmT4wafCqSVEh8+yFvi0hBLhsy2G3i2hVPjkxdAjvwPuC3Z9vFT41ij3f4RSprARiytl/fQXLoeS4cM2RN4tISp86I7QqyVEhg/fEntWQnT4InuCfSWUCB/yK9DndDp1+3rn87nb02uX1yWM/v8qa06YE+aEOWFOmBPmhDlhTpgT5oQ5YU6YE+aEOWFOmBPmVHoApX0DtPrXbFcCl4MAAAAASUVORK5CYII=" alt="" width="16" height="16"></div>
+        <p class="application-field-error" id="residence-state-error" role="alert" hidden></p>
+      </div>
+      <div class="application-field">
+        <label for="residence-lga">Local government area<span class="required">*</span></label>
+        <div class="control-wrap"><select id="residence-lga" name="residence-lga" aria-describedby="residence-lga-error" required><option value="Surulere" selected>Surulere</option></select><img class="select-caret" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABl0lEQVR4nO3aPY7CMBiE4ZfRNqm5Ay0ttNyBksvBPWhDCyV3oIYuq0S7K5AIf44/F7OPhARBQZ5BCbbFqGmaBmPCnDAnzAlzwpwwJ8wJc8KcMCfMCXPCnDAnzAlzwpwwJ8wJc8LcV8rJ+/2euq6758vlkvF4TITj8ch2u+VyuTCbzbpHeAG73Y71ev33+nA4sFqtmM/n5NQWvtlsbsqoqorpdBp7CdQ/3/y1dmD3jucK/2gs2Quoquru8Vwl9IVPpU9PXCwWve8NXcKz8O39J7yAyWTSXfO5S3gWvh1Dys1XH58J3Q0vZwmvhE+96Srp7IwlRIQfbCI0dAlR4QedCQ5VQmT4wafCqSVEh8+yFvi0hBLhsy2G3i2hVPjkxdAjvwPuC3Z9vFT41ij3f4RSprARiytl/fQXLoeS4cM2RN4tISp86I7QqyVEhg/fEntWQnT4InuCfSWUCB/yK9DndDp1+3rn87nb02uX1yWM/v8qa06YE+aEOWFOmBPmhDlhTpgT5oQ5YU6YE+aEOWFOmBPmVHoApX0DtPrXbFcCl4MAAAAASUVORK5CYII=" alt="" width="16" height="16"></div>
+        <p class="application-field-error" id="residence-lga-error" role="alert" hidden></p>
+      </div>
+    </div>
+    <button class="action-button application-action" id="contact-continue" type="button">Continue</button>
+  </div>
+</section>
+
+<section class="verification-card application-card" id="funding-card" data-application-card="funding" data-open="false" data-complete="false" data-shown="false" aria-labelledby="funding-title">
+  <button class="section-trigger" type="button" id="funding-toggle" aria-expanded="false" aria-controls="funding-body" disabled>
+    <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="status-check-muted" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
+    <span>Loan options</span><span class="chevrons"><img class="chevron-open" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABqUlEQVR4nOWZsa6CMBiFjycmuuHm5sioi6w8gW/A8/EGbjoyOnX0Ddh0Y8P8JjfxGvWSCPxczpeQtKVpe07+kv5lUtd1DWEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcaZeE18uF5xOp3t5u91isVi4rGPi8V+gLEvkeY6qqu71+XyOLMuwXC7HvwXKJ/GGla3N3o06AkII2O/3H/vsdjus1+vxRUBoIN6wPtZ3VAaEhuI9TODQxPdtAj3F2363x9OEqaf4x4/du74/7V19GDkE8Vb2igR6i/c2gUMQ72kChyLeywQOSbyHCfx2ADu/tym+qQnH47GV3IFtJDZdnes/mdBWAsVv8vnnrK6LpKaJCbaW3g0oiuKleMvt287o/jLB1tL7SbB6I76riw0zwcZ9FXXvorDTCEiS5Fe9j1sdG9vmsLkeiePY50IkhIDz+YzZbIY0TRFFEfrger3icDjc591sNlitVv/rTnBIEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDi0HsB3twAgQb9vcYNrjsAAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="chevron-closed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB2klEQVR4nOXarZLCQBAE4KbrBC64OHDIOCQOicTxbEjegDdAokBG4nDgQOVqUpcruCP8JNnJXfXnQlWSmYbNZrfoZFmWQRghjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYS4jzon7/d7bLdbXC4XTCYT9Ho9eDgej1iv1/l9h8MhkiTxD2C322G1Wt2EMZ/PEccxQjocDlgulzifz/lxmqaIogiDwcB3CKRpenNsBVlhVqBX84XNZlP5mqx6Yrfb/fWZFbZYLPJfR9PsmveaL6sleADj8bj0xjY0mgyhGG5lzVst7gFEUZSP+dAh/HzWXLN7Ww1WSyvTYBzHQUN41Lxp4qHLWmd/hWBTYJmqITxrfjqdNjLjsPYVgHwetoKaCuGV5uvM/UHeBJOGQvBsvvFX4boheDcfZC1QNYQ2mg+2GHo3hLaar70YeqQouKyx68/bat50Qv9L7Nm3+0jo5l32A54Nhzabd9sQeTcEr+Zdd4ReDcGzeZdnwKtreltPzGYz9Pt9z3LgHsC9EIpVXejdpD8TgDmdTt87OaPRqNaS9l8G8FcQ4ghxhDhCHCGOEEeII8QR4ghxhDhCHCGOEEeII8QR4th2AW37BIDR/AbM1QX6AAAAAElFTkSuQmCC" alt="" width="16" height="16"></span>
+  </button>
+  <div class="application-body" id="funding-body" aria-hidden="true" inert>
+    <h2 class="application-title" id="funding-title">Loan options</h2>
+    <div class="application-fields">
+      <div class="funding-tuition">
+        <div class="application-line"><span class="application-subtitle">Tuition loan</span><span class="application-caption">Included</span></div>
+        <p class="funding-amount" data-amount="tuition">₦250,000</p>
+        <p class="application-caption"><span data-record="institution">University of Lagos</span><br>2026/2027 academic session</p>
+      </div>
+      <label class="application-choice funding-choice" for="upkeep-choice">
+        <input id="upkeep-choice" type="checkbox" name="upkeep">
+        <span class="application-choice-copy"><span class="application-subtitle">Optional Upkeep Loan</span><span class="funding-monthly">₦20,000 per month</span><span class="application-caption">For 9 months · ₦180,000 total</span></span>
+      </label>
+      <p class="application-caption funding-explanation">Upkeep covers living expenses and is added to the amount you repay.</p>
+      <div class="application-total"><span>Total loan amount</span><strong data-amount="total">₦250,000</strong></div>
+    </div>
+    <button class="action-button application-action" id="funding-continue" type="button">Continue</button>
+  </div>
+</section>
+
+<section class="verification-card application-card" id="bank-card" data-application-card="bank" data-open="false" data-complete="false" data-shown="false" aria-labelledby="bank-title">
+  <button class="section-trigger" type="button" id="bank-toggle" aria-expanded="false" aria-controls="bank-body" disabled>
+    <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="status-check-muted" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
+    <span>Bank details</span><span class="chevrons"><img class="chevron-open" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABqUlEQVR4nOWZsa6CMBiFjycmuuHm5sioi6w8gW/A8/EGbjoyOnX0Ddh0Y8P8JjfxGvWSCPxczpeQtKVpe07+kv5lUtd1DWEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcaZeE18uF5xOp3t5u91isVi4rGPi8V+gLEvkeY6qqu71+XyOLMuwXC7HvwXKJ/GGla3N3o06AkII2O/3H/vsdjus1+vxRUBoIN6wPtZ3VAaEhuI9TODQxPdtAj3F2363x9OEqaf4x4/du74/7V19GDkE8Vb2igR6i/c2gUMQ72kChyLeywQOSbyHCfx2ADu/tym+qQnH47GV3IFtJDZdnes/mdBWAsVv8vnnrK6LpKaJCbaW3g0oiuKleMvt287o/jLB1tL7SbB6I76riw0zwcZ9FXXvorDTCEiS5Fe9j1sdG9vmsLkeiePY50IkhIDz+YzZbIY0TRFFEfrger3icDjc591sNlitVv/rTnBIEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDi0HsB3twAgQb9vcYNrjsAAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="chevron-closed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB2klEQVR4nOXarZLCQBAE4KbrBC64OHDIOCQOicTxbEjegDdAokBG4nDgQOVqUpcruCP8JNnJXfXnQlWSmYbNZrfoZFmWQRghjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYS4jzon7/d7bLdbXC4XTCYT9Ho9eDgej1iv1/l9h8MhkiTxD2C322G1Wt2EMZ/PEccxQjocDlgulzifz/lxmqaIogiDwcB3CKRpenNsBVlhVqBX84XNZlP5mqx6Yrfb/fWZFbZYLPJfR9PsmveaL6sleADj8bj0xjY0mgyhGG5lzVst7gFEUZSP+dAh/HzWXLN7Ww1WSyvTYBzHQUN41Lxp4qHLWmd/hWBTYJmqITxrfjqdNjLjsPYVgHwetoKaCuGV5uvM/UHeBJOGQvBsvvFX4boheDcfZC1QNYQ2mg+2GHo3hLaar70YeqQouKyx68/bat50Qv9L7Nm3+0jo5l32A54Nhzabd9sQeTcEr+Zdd4ReDcGzeZdnwKtreltPzGYz9Pt9z3LgHsC9EIpVXejdpD8TgDmdTt87OaPRqNaS9l8G8FcQ4ghxhDhCHCGOEEeII8QR4ghxhDhCHCGOEEeII8QR4th2AW37BIDR/AbM1QX6AAAAAElFTkSuQmCC" alt="" width="16" height="16"></span>
+  </button>
+  <div class="application-body" id="bank-body" aria-hidden="true" inert>
+    <h2 class="application-title" id="bank-title">Bank details<span id="bank-status" aria-live="polite"></span></h2>
+    <div class="application-fields" id="bank-fields">
+      <div class="application-field">
+        <label for="bvn">Bank verification number<span class="required">*</span></label>
+        <div class="control-wrap"><input id="bvn" name="bvn" type="text" inputmode="numeric" maxlength="11" autocomplete="off" value="12345678901" aria-describedby="bvn-error" required></div>
+        <p class="application-field-error" id="bvn-error" role="alert" hidden></p>
+      </div>
+      <div class="application-field">
+        <label for="bank-name">Bank<span class="required">*</span></label>
+        <div class="control-wrap"><select id="bank-name" name="bank" aria-describedby="bank-name-error" required><option value="Access Bank" selected>Access Bank</option><option value="First Bank of Nigeria">First Bank of Nigeria</option><option value="Guaranty Trust Bank">Guaranty Trust Bank</option><option value="United Bank for Africa">United Bank for Africa</option><option value="Zenith Bank">Zenith Bank</option></select><img class="select-caret" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABl0lEQVR4nO3aPY7CMBiE4ZfRNqm5Ay0ttNyBksvBPWhDCyV3oIYuq0S7K5AIf44/F7OPhARBQZ5BCbbFqGmaBmPCnDAnzAlzwpwwJ8wJc8KcMCfMCXPCnDAnzAlzwpwwJ8wJc8LcV8rJ+/2euq6758vlkvF4TITj8ch2u+VyuTCbzbpHeAG73Y71ev33+nA4sFqtmM/n5NQWvtlsbsqoqorpdBp7CdQ/3/y1dmD3jucK/2gs2Quoquru8Vwl9IVPpU9PXCwWve8NXcKz8O39J7yAyWTSXfO5S3gWvh1Dys1XH58J3Q0vZwmvhE+96Srp7IwlRIQfbCI0dAlR4QedCQ5VQmT4wafCqSVEh8+yFvi0hBLhsy2G3i2hVPjkxdAjvwPuC3Z9vFT41ij3f4RSprARiytl/fQXLoeS4cM2RN4tISp86I7QqyVEhg/fEntWQnT4InuCfSWUCB/yK9DndDp1+3rn87nb02uX1yWM/v8qa06YE+aEOWFOmBPmhDlhTpgT5oQ5YU6YE+aEOWFOmBPmVHoApX0DtPrXbFcCl4MAAAAASUVORK5CYII=" alt="" width="16" height="16"></div>
+        <p class="application-field-error" id="bank-name-error" role="alert" hidden></p>
+      </div>
+      <div class="application-field">
+        <label for="bank-account">Account number<span class="required">*</span></label>
+        <div class="control-wrap"><input id="bank-account" name="bank-account" type="text" inputmode="numeric" maxlength="10" autocomplete="off" value="0123456789" aria-describedby="bank-account-error" required></div>
+        <p class="application-field-error" id="bank-account-error" role="alert" hidden></p>
+      </div>
+    </div>
+    <dl class="application-record-list bank-result" id="bank-result" hidden><div><dt>Account name</dt><dd data-record="name">Kelechi Adunaro</dd></div></dl>
+    <button class="action-button application-action" id="bank-verify" type="button">Verify bank details</button>
+  </div>
+</section>
+
+<section class="verification-card application-card" id="documents-card" data-application-card="documents" data-open="false" data-complete="false" data-shown="false" aria-labelledby="documents-title">
+  <button class="section-trigger" type="button" id="documents-toggle" aria-expanded="false" aria-controls="documents-body" disabled>
+    <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="status-check-muted" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
+    <span>Supporting documents</span><span class="chevrons"><img class="chevron-open" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABqUlEQVR4nOWZsa6CMBiFjycmuuHm5sioi6w8gW/A8/EGbjoyOnX0Ddh0Y8P8JjfxGvWSCPxczpeQtKVpe07+kv5lUtd1DWEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcaZeE18uF5xOp3t5u91isVi4rGPi8V+gLEvkeY6qqu71+XyOLMuwXC7HvwXKJ/GGla3N3o06AkII2O/3H/vsdjus1+vxRUBoIN6wPtZ3VAaEhuI9TODQxPdtAj3F2363x9OEqaf4x4/du74/7V19GDkE8Vb2igR6i/c2gUMQ72kChyLeywQOSbyHCfx2ADu/tym+qQnH47GV3IFtJDZdnes/mdBWAsVv8vnnrK6LpKaJCbaW3g0oiuKleMvt287o/jLB1tL7SbB6I76riw0zwcZ9FXXvorDTCEiS5Fe9j1sdG9vmsLkeiePY50IkhIDz+YzZbIY0TRFFEfrger3icDjc591sNlitVv/rTnBIEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDi0HsB3twAgQb9vcYNrjsAAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="chevron-closed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB2klEQVR4nOXarZLCQBAE4KbrBC64OHDIOCQOicTxbEjegDdAokBG4nDgQOVqUpcruCP8JNnJXfXnQlWSmYbNZrfoZFmWQRghjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYS4jzon7/d7bLdbXC4XTCYT9Ho9eDgej1iv1/l9h8MhkiTxD2C322G1Wt2EMZ/PEccxQjocDlgulzifz/lxmqaIogiDwcB3CKRpenNsBVlhVqBX84XNZlP5mqx6Yrfb/fWZFbZYLPJfR9PsmveaL6sleADj8bj0xjY0mgyhGG5lzVst7gFEUZSP+dAh/HzWXLN7Ww1WSyvTYBzHQUN41Lxp4qHLWmd/hWBTYJmqITxrfjqdNjLjsPYVgHwetoKaCuGV5uvM/UHeBJOGQvBsvvFX4boheDcfZC1QNYQ2mg+2GHo3hLaar70YeqQouKyx68/bat50Qv9L7Nm3+0jo5l32A54Nhzabd9sQeTcEr+Zdd4ReDcGzeZdnwKtreltPzGYz9Pt9z3LgHsC9EIpVXejdpD8TgDmdTt87OaPRqNaS9l8G8FcQ4ghxhDhCHCGOEEeII8QR4ghxhDhCHCGOEEeII8QR4th2AW37BIDR/AbM1QX6AAAAAElFTkSuQmCC" alt="" width="16" height="16"></span>
+  </button>
+  <div class="application-body" id="documents-body" aria-hidden="true" inert>
+    <h2 class="application-title" id="documents-title">Supporting documents</h2>
+    <div class="application-fields">
+      <div class="application-field application-file-field">
+        <label for="admission-file">Admission letter<span class="required">*</span></label>
+        <div class="control-wrap application-file-control"><input id="admission-file" name="admission-letter" type="file" accept="application/pdf,image/jpeg" aria-describedby="admission-file-hint admission-file-error" required><span class="application-file-picker-copy" aria-hidden="true"><span>Choose file</span><span id="admission-file-display">No file chosen</span></span></div>
+        <p class="application-caption application-field-hint" id="admission-file-hint">PDF or JPG · Up to 2 MB</p>
+        <div class="application-file-info" id="admission-file-info" hidden><span class="application-file-name" data-file-name="admission"></span><div class="application-file-actions"><button class="application-text-button" id="admission-file-view" type="button">View</button><button class="application-text-button" id="admission-file-remove" type="button">Remove</button></div></div>
+        <p class="application-field-error" id="admission-file-error" role="alert" hidden></p>
+      </div>
+      <div class="application-field application-file-field">
+        <label for="student-id-file">Student ID <span class="application-optional">(optional)</span></label>
+        <div class="control-wrap application-file-control"><input id="student-id-file" name="student-id" type="file" accept="application/pdf,image/jpeg" aria-describedby="student-id-file-hint student-id-file-error"><span class="application-file-picker-copy" aria-hidden="true"><span>Choose file</span><span id="student-id-file-display">No file chosen</span></span></div>
+        <p class="application-caption application-field-hint" id="student-id-file-hint">PDF or JPG · Up to 2 MB</p>
+        <div class="application-file-info" id="student-id-file-info" hidden><span class="application-file-name" data-file-name="student-id"></span><div class="application-file-actions"><button class="application-text-button" id="student-id-file-view" type="button">View</button><button class="application-text-button" id="student-id-file-remove" type="button">Remove</button></div></div>
+        <p class="application-field-error" id="student-id-file-error" role="alert" hidden></p>
+      </div>
+      <div class="application-agreement"><label class="application-choice" for="policy-agreement"><input id="policy-agreement" type="checkbox" required><span class="application-choice-copy">I have read and agree to the</span></label><button class="application-text-button application-policy-link" data-policy="declaration" type="button">Student Loan Policy and Declaration</button></div>
+    </div>
+    <button class="action-button application-action" id="documents-continue" type="button" disabled>Continue</button>
+  </div>
+</section>
+
+<section class="verification-card application-card" id="review-card" data-application-card="review" data-open="false" data-complete="false" data-shown="false" aria-labelledby="review-title">
+  <button class="section-trigger" type="button" id="review-toggle" aria-expanded="false" aria-controls="review-body" disabled>
+    <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="status-check-muted" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
+    <span>Review and submit</span><span class="chevrons"><img class="chevron-open" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABqUlEQVR4nOWZsa6CMBiFjycmuuHm5sioi6w8gW/A8/EGbjoyOnX0Ddh0Y8P8JjfxGvWSCPxczpeQtKVpe07+kv5lUtd1DWEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcaZeE18uF5xOp3t5u91isVi4rGPi8V+gLEvkeY6qqu71+XyOLMuwXC7HvwXKJ/GGla3N3o06AkII2O/3H/vsdjus1+vxRUBoIN6wPtZ3VAaEhuI9TODQxPdtAj3F2363x9OEqaf4x4/du74/7V19GDkE8Vb2igR6i/c2gUMQ72kChyLeywQOSbyHCfx2ADu/tym+qQnH47GV3IFtJDZdnes/mdBWAsVv8vnnrK6LpKaJCbaW3g0oiuKleMvt287o/jLB1tL7SbB6I76riw0zwcZ9FXXvorDTCEiS5Fe9j1sdG9vmsLkeiePY50IkhIDz+YzZbIY0TRFFEfrger3icDjc591sNlitVv/rTnBIEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDi0HsB3twAgQb9vcYNrjsAAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="chevron-closed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB2klEQVR4nOXarZLCQBAE4KbrBC64OHDIOCQOicTxbEjegDdAokBG4nDgQOVqUpcruCP8JNnJXfXnQlWSmYbNZrfoZFmWQRghjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYS4jzon7/d7bLdbXC4XTCYT9Ho9eDgej1iv1/l9h8MhkiTxD2C322G1Wt2EMZ/PEccxQjocDlgulzifz/lxmqaIogiDwcB3CKRpenNsBVlhVqBX84XNZlP5mqx6Yrfb/fWZFbZYLPJfR9PsmveaL6sleADj8bj0xjY0mgyhGG5lzVst7gFEUZSP+dAh/HzWXLN7Ww1WSyvTYBzHQUN41Lxp4qHLWmd/hWBTYJmqITxrfjqdNjLjsPYVgHwetoKaCuGV5uvM/UHeBJOGQvBsvvFX4boheDcfZC1QNYQ2mg+2GHo3hLaar70YeqQouKyx68/bat50Qv9L7Nm3+0jo5l32A54Nhzabd9sQeTcEr+Zdd4ReDcGzeZdnwKtreltPzGYz9Pt9z3LgHsC9EIpVXejdpD8TgDmdTt87OaPRqNaS9l8G8FcQ4ghxhDhCHCGOEEeII8QR4ghxhDhCHCGOEEeII8QR4th2AW37BIDR/AbM1QX6AAAAAElFTkSuQmCC" alt="" width="16" height="16"></span>
+  </button>
+  <div class="application-body" id="review-body" aria-hidden="true" inert>
+    <h2 class="application-title" id="review-title">Review application</h2>
+    <div class="application-fields">
+      <div class="application-review-group"><details class="application-record"><summary>Personal details</summary><dl class="application-record-list"><div><dt>Full name</dt><dd data-record="name">Kelechi Adunaro</dd></div><div><dt>Email</dt><dd data-record="email">kelechi.adunaro@example.com</dd></div><div><dt>Phone number</dt><dd data-review="phone">08012345678</dd></div><div><dt>Residential address</dt><dd data-review="address">12 Palm Avenue</dd></div><div><dt>State / LGA of residence</dt><dd data-review="residence">Lagos / Surulere</dd></div></dl></details><button class="application-text-button application-review-edit" data-edit-application="contact" type="button" aria-label="Edit personal details">Edit</button></div>
+      <details class="application-record"><summary>Institution details</summary><dl class="application-record-list"><div><dt>Institution</dt><dd data-record="institution">University of Lagos</dd></div><div><dt>Matriculation number</dt><dd data-record="matric">2026/01234</dd></div><div><dt>JAMB registration number</dt><dd data-record="jamb">2026123456AB</dd></div><div><dt>Programme / Level</dt><dd>Computer Science / 300</dd></div><div><dt>Academic session</dt><dd>2026/2027</dd></div></dl></details>
+      <div class="application-review-group"><details class="application-record"><summary>Bank details</summary><dl class="application-record-list"><div><dt>Account name</dt><dd data-record="name">Kelechi Adunaro</dd></div><div><dt>Bank</dt><dd data-review="bank">Access Bank</dd></div><div><dt>Account number</dt><dd data-review="account">0123456789</dd></div></dl></details><button class="application-text-button application-review-edit" data-edit-application="bank" type="button" aria-label="Edit bank details">Edit</button></div>
+      <div class="application-review-group"><details class="application-record"><summary>Documents</summary><dl class="application-record-list"><div><dt>Admission letter</dt><dd data-review="admission">Not uploaded</dd></div><div><dt>Student ID</dt><dd data-review="student-id">Not uploaded</dd></div></dl></details><button class="application-text-button application-review-edit" data-edit-application="documents" type="button" aria-label="Edit supporting documents">Edit</button></div>
+      <div class="application-review-funding">
+        <div class="application-line"><h3 class="application-subtitle">Loan amount</h3><button class="application-text-button" data-edit-application="funding" type="button" aria-label="Edit loan options">Edit</button></div>
+        <dl class="application-amount-list"><div><dt>Tuition loan</dt><dd data-amount="tuition">₦250,000</dd></div><div><dt>Upkeep loan</dt><dd data-amount="upkeep">₦0</dd></div></dl>
+        <p class="application-caption" id="review-upkeep-period" hidden>₦20,000 per month for 9 months</p>
+        <div class="application-total"><span>Total loan amount</span><strong data-amount="total">₦250,000</strong></div>
+        <p class="application-repayment">0% interest. If you participate in NYSC, repayment starts 2 years after completion. For salaried borrowers, 10% of monthly salary goes towards repayment. <a href="https://www.nelf.gov.ng/terms" target="_blank" rel="noopener noreferrer">Read repayment terms</a></p>
+      </div>
+      <div class="application-agreement"><label class="application-choice" for="terms-agreement"><input id="terms-agreement" type="checkbox" required><span class="application-choice-copy">I agree to the</span></label><button class="application-text-button application-policy-link" data-policy="terms" type="button">Terms and Conditions</button></div>
+      <div class="application-agreement"><label class="application-choice" for="gsi-agreement"><input id="gsi-agreement" type="checkbox" required><span class="application-choice-copy">I agree to the Global Standing Instruction (GSI) mandate.</span></label><p class="application-caption application-agreement-note">This allows recovery of due debt from your accounts.</p><button class="application-text-button application-policy-link" data-policy="gsi" type="button">Read GSI mandate</button></div>
+    </div>
+    <p class="application-field-error" id="submission-error" role="alert" hidden></p>
+    <button class="action-button application-action" id="application-submit" type="button" disabled>Submit application</button>
+  </div>
+</section>
+
+<section class="verification-card application-success" id="application-success" aria-labelledby="application-success-title" aria-hidden="true" hidden>
+  <span class="application-success-icon" aria-hidden="true"><svg width="40" height="40" viewBox="0 0 40 40" fill="none"><path d="m10 20 7 7 13-14" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+  <h2 class="application-title" id="application-success-title" tabindex="-1">Application submitted</h2>
+  <p class="application-success-description">Your application has been received.</p>
+  <dl class="application-submission-details"><div><dt>Tracking ID</dt><dd>SL-2026-01482</dd></div><div><dt>Status</dt><dd>Pending</dd></div><div><dt>Total loan amount</dt><dd data-amount="total">₦250,000</dd></div></dl>
+  <button class="action-button application-action" id="view-application" type="button">View application</button>
+  <button class="action-button application-action application-secondary" id="restart-application" type="button">Start again</button>
+</section>
+
+<section class="verification-card application-submitted-summary" id="submitted-summary" aria-labelledby="submitted-summary-title" hidden>
+  <h2 class="application-title" id="submitted-summary-title">Your application</h2>
+  <p class="application-caption application-submitted-caption">SL-2026-01482 · Pending</p>
+  <dl class="application-record-list"><div><dt>Full name</dt><dd data-record="name">Kelechi Adunaro</dd></div><div><dt>Email</dt><dd data-record="email">kelechi.adunaro@example.com</dd></div><div><dt>Phone number</dt><dd data-review="phone">08012345678</dd></div><div><dt>Address</dt><dd data-review="address">12 Palm Avenue</dd></div><div><dt>State / LGA of residence</dt><dd data-review="residence">Lagos / Surulere</dd></div><div><dt>Institution</dt><dd data-record="institution">University of Lagos</dd></div><div><dt>Matriculation number</dt><dd data-record="matric">2026/01234</dd></div><div><dt>JAMB registration number</dt><dd data-record="jamb">2026123456AB</dd></div><div><dt>Bank</dt><dd data-review="bank">Access Bank</dd></div><div><dt>Account number</dt><dd data-review="account">0123456789</dd></div><div><dt>Admission letter</dt><dd data-review="admission">Not uploaded</dd></div><div><dt>Student ID</dt><dd data-review="student-id">Not uploaded</dd></div></dl>
+  <dl class="application-amount-list application-submitted-amounts"><div><dt>Tuition loan</dt><dd data-amount="tuition">₦250,000</dd></div><div><dt>Upkeep loan</dt><dd data-amount="upkeep">₦0</dd></div></dl>
+  <div class="application-total"><span>Total loan amount</span><strong data-amount="total">₦250,000</strong></div>
+  <button class="action-button application-action" id="back-to-success" type="button">Back</button>
+</section>
+
+<canvas id="application-confetti" aria-hidden="true"></canvas>
+<dialog class="application-policy-dialog" id="application-policy-dialog" aria-labelledby="policy-dialog-title">
+  <h2 class="application-title" id="policy-dialog-title">Policy</h2>
+  <div id="policy-dialog-body"></div>
+  <button class="action-button application-action" id="policy-dialog-close" type="button">Close</button>
+</dialog>
+
+<!-- APPLICATION CONTINUATION END -->
+
         </div>
 
 
@@ -1869,20 +3020,20 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
       const active=document.activeElement;
       if(root.getAttribute('aria-busy')==='true'&&active?.matches('input,select'))active.blur();
       if(state!==lastState){
-        if(active?.matches('input,select')&&!['editing','jamb','account','email'].includes(state))active.blur();
+        if(active?.matches('input,select,textarea')&&!['editing','jamb','account','email','application'].includes(state))active.blur();
         // Do not compete with the accordion reflow by scrolling at Continue.
         if(['intro','citizenship'].includes(state)&&window.scrollY>16)window.scrollTo({top:0,behavior:'smooth'});
       }
       lastState=state;
     }
     root.addEventListener('slas:statechange',appearance);appearance();
-    root.querySelectorAll('input').forEach(input=>{
+    root.querySelectorAll('input,textarea').forEach(input=>{
       if(input.type==='password')input.autocomplete='new-password';
       else if(input.id!=='email-code')input.autocomplete='off';
       input.spellcheck=false;
       input.setAttribute('autocorrect','off');
       input.setAttribute('enterkeyhint',['dob','account-email','account-password'].includes(input.id)?'next':'done');
-      input.setAttribute('autocapitalize',input.type==='email'||input.type==='password'||input.classList.contains('otp-input')?'none':'characters');
+      input.setAttribute('autocapitalize',input.tagName==='TEXTAREA'?'sentences':input.type==='email'||input.type==='password'||input.classList.contains('otp-input')?'none':'characters');
     });
     const dob=document.querySelector('#dob');
     dob.inputMode='numeric';dob.maxLength=10;
@@ -1895,7 +3046,7 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
     });
     function revealFocused(){
       const active=document.activeElement;
-      if(!active?.matches('input,select')||!root.contains(active))return;
+      if(!active?.matches('input,select,textarea')||!root.contains(active))return;
       const r=active.getBoundingClientRect(),v=window.visualViewport;
       const top=v?.offsetTop||0,bottom=top+(v?.height||window.innerHeight);
       if(r.top<top+16||r.bottom>bottom-24)active.scrollIntoView({block:'center',behavior:'smooth'});

@@ -2,8 +2,10 @@
 
 https://alinachandel-max.github.io/slas-prototype/
 
-Client review of the student-loan application flow: citizenship, student verification, JAMB verification, account details and email-code confirmation. Updated from Figma section90:21812.
+Interactive student loan application: citizenship, institution and JAMB checks, account and email confirmation, contact details, tuition and optional upkeep, bank details, supporting documents, review and submission confirmation.
 
-Verification and email delivery are local simulations. Use six digits such as123456 for the email-code demo. No account is created, no email is sent, and no credentials or application data are stored or submitted to a service. The portrait is AI-generated; names, dates and identifiers are fictional demonstration data.
+Completed steps remain accessible in a compact history. Technical checks advance after a brief success state; JAMB details require explicit confirmation. Supports native mobile input, reduced motion and a simple submitted state with confetti.
 
-Responsive HTML with native mobile inputs, a progress indicator, continuous-corner approximation, and reduced-motion support. Manrope is included under the SIL Open Font License; see LICENSE-Manrope.txt.
+This is a frontend demonstration. No account is created, no email is sent, no application is submitted to NELFUND, and no personal details, credentials or files are stored or transmitted. The student portrait is AI-generated; profile data, institutional fee and tracking ID are fictional. Use any six digits for the email-code demo. Upload controls accept local JPEG/PDF examples up to2MB. The location and bank lists are demonstration subsets, and agreement dialogs contain prototype summaries rather than final legal documents.
+
+Manrope is included under the SIL Open Font License; see LICENSE-Manrope.txt.
