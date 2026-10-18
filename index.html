@@ -408,9 +408,9 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 .email-description{
   margin:8px 0 0;
   color:#262626;
-  font-size:18px;
+  font-size:16px;
   font-weight:500;
-  line-height:25px;
+  line-height:24px;
 }
 .email-description #confirmation-email{display:block;overflow-wrap:anywhere}
 .email-code-field{min-width:0;margin:24px 0 0;padding:0;border:0}
@@ -453,10 +453,10 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 [data-state=verifying] .education-card .chevron-open{opacity:1;transform:rotate(0)}
 [data-state=verifying] .education-card .chevron-closed{opacity:0;transform:rotate(-180deg)}
 [data-education-verified=true]:not([data-state=editing]):not([data-state=verifying]):not([data-state=verified-black]) .education-verified-word .verified-letter{color:#027b22}
-[data-jamb-verified=true] .jamb-summary{opacity:1;visibility:visible;pointer-events:auto;transform:none}
-[data-jamb-verified=true] .jamb-input-fields{opacity:0;visibility:hidden;pointer-events:none}
-[data-jamb-verified=true] .jamb-card .action-edit,[data-jamb-verified=true] .jamb-card .action-busy{opacity:0;transform:translateY(-4px)}
-[data-jamb-verified=true] .jamb-card .action-success{opacity:1;transform:none}
+[data-jamb-success-visible=true] .jamb-summary{opacity:1;visibility:visible;pointer-events:auto;transform:none}
+[data-jamb-success-visible=true] .jamb-input-fields{opacity:0;visibility:hidden;pointer-events:none}
+[data-jamb-success-visible=true] .jamb-card .action-edit,[data-jamb-success-visible=true] .jamb-card .action-busy{opacity:0;transform:translateY(-4px)}
+[data-jamb-success-visible=true] .jamb-card .action-success{opacity:1;transform:none}
 [data-account-visible=true] .section-stack{display:none}
 #intro-screen .intro-benefit-card{flex-basis:170px;width:170px}
 #intro-screen .intro-benefit-card h3,#intro-screen .intro-benefit-card p{left:12px;width:146px}
@@ -475,7 +475,18 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 #prototype .account-flow .account-pane{position:absolute;left:0;right:0;top:0;grid-area:auto;background:transparent;transform:none;transition:none}
 #prototype[data-route-transition] .section-stack,#prototype[data-route-transition] .account-flow{pointer-events:none}
 @media(prefers-reduced-motion:reduce){#prototype .account-flow{transition:none}}
+
+/* Completed summaries recede; the currently open verified section stays green. */
+.status-check-muted{opacity:0;transform:scale(.85)}
+[data-education-verified=true][data-education-open=false] .education-card .status-check,
+[data-jamb-verified=true][data-jamb-open=false] .jamb-card .status-check{opacity:0}
+[data-education-verified=true][data-education-open=false] .education-card .status-check-muted,
+[data-jamb-verified=true][data-jamb-open=false] .jamb-card .status-check-muted{opacity:1;transform:scale(1)}
+[data-citizenship-verified=true]:not([data-state=citizenship]) .citizenship-confirmed{opacity:0}
+[data-citizenship-verified=true]:not([data-state=citizenship]) .citizenship-unconfirmed{opacity:1}
 </style>
+  
+  
   
   <script>/* Local interaction demo. No account creation, verification API or network calls. */
 (function () {
@@ -511,11 +522,15 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     var generation = 0;
     var educationSignature = null;
     var jambSignature = null;
+    var accountSignature = null;
+    var citizenshipReturnState = null;
     var resendSeconds = 0;
+    var resendDeadline = 0;
+    var resendTimer = null;
     var model;
 
     function signature(fields) {
-      return JSON.stringify(fields.map(function (field) { return field.value.trim(); }));
+      return JSON.stringify(fields.map(function (field) { return field.type === 'password' ? field.value : field.value.trim(); }));
     }
 
     function cancelTimers() {
@@ -589,7 +604,13 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     function getState() {
       return {
         state: model.state,
-        citizenshipVerified: model.state !== 'intro' && model.state !== 'citizenship',
+        citizenshipVerified: model.citizenshipConfirmed,
+        citizenshipConfirmed: model.citizenshipConfirmed,
+        citizenshipOpen: model.state === 'citizenship',
+        accountOpen: model.accountOpen,
+        emailOpen: model.emailOpen,
+        accountSubmitted: model.accountSubmitted,
+        emailConfirmed: model.emailConfirmed,
         busy: isBusy(),
         settling: model.settling,
         educationVerified: model.educationVerified,
@@ -615,13 +636,24 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       var introVisible = model.state === 'intro';
       var citizenshipVisible = model.state === 'citizenship';
       var accountVisible = accountStates.indexOf(model.state) !== -1;
-      var citizenshipCardVisible = !introVisible && !accountVisible && model.state !== 'editing' && model.state !== 'verifying';
-      var educationSuccessVisible = model.educationVerified && model.state !== 'editing';
-      var jambSuccessVisible = model.jambVerified;
+      var citizenshipCardVisible = !introVisible;
+      var educationSuccessVisible = model.educationVerified && model.state !== 'editing' && model.state !== 'verifying';
+      var jambSuccessVisible = model.jambVerified && model.state !== 'jamb' && model.state !== 'jamb-verifying';
+      var accountShown = !introVisible && (model.jambVerified || model.accountSubmitted || accountVisible);
+      var emailShown = !introVisible && (model.accountSubmitted || accountVisible);
       root.dataset.state = model.state;
-      root.dataset.citizenshipVerified = String(!introVisible && !citizenshipVisible);
+      root.dataset.citizenshipVerified = String(model.citizenshipConfirmed);
+      root.dataset.citizenshipOpen = String(citizenshipVisible);
       root.dataset.citizenshipVisible = String(citizenshipCardVisible);
       root.dataset.accountVisible = String(accountVisible);
+      root.dataset.accountOpen = String(model.accountOpen);
+      root.dataset.emailOpen = String(model.emailOpen);
+      root.dataset.accountShown = String(accountShown);
+      root.dataset.emailShown = String(emailShown);
+      root.dataset.accountSubmitted = String(model.accountSubmitted);
+      root.dataset.emailConfirmed = String(model.emailConfirmed);
+      root.dataset.educationSuccessVisible = String(educationSuccessVisible);
+      root.dataset.jambSuccessVisible = String(jambSuccessVisible);
       root.dataset.progressStep = String(progressStep());
       root.dataset.educationOpen = String(model.educationOpen);
       root.dataset.jambOpen = String(model.jambOpen);
@@ -643,8 +675,8 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
         citizenshipBody.setAttribute('aria-hidden', String(!citizenshipVisible));
       }
       root.querySelectorAll('.section-stack').forEach(function (stack) {
-        stack.inert = introVisible || accountVisible;
-        stack.setAttribute('aria-hidden', String(introVisible || accountVisible));
+        stack.inert = introVisible;
+        stack.setAttribute('aria-hidden', String(introVisible));
       });
       root.querySelectorAll('.citizenship-card').forEach(function (card) {
         card.inert = !citizenshipCardVisible;
@@ -674,8 +706,8 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       });
       [byId('education-card'), byId('jamb-card')].forEach(function (card) {
         if (!card) return;
-        card.inert = introVisible || accountVisible;
-        card.setAttribute('aria-hidden', String(introVisible || accountVisible));
+        card.inert = introVisible;
+        card.setAttribute('aria-hidden', String(introVisible));
       });
       var citizenshipToggle = byId('citizenship-toggle');
       if (citizenshipToggle) {
@@ -689,8 +721,8 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 
       var educationAction = byId('education-action');
       var jambAction = byId('jamb-action');
-      setDisabled(educationAction, busy || accountVisible || !(model.state === 'editing' || model.state === 'verified' || model.advanced));
-      setDisabled(jambAction, busy || accountVisible || !model.advanced);
+      setDisabled(educationAction, busy || !model.educationOpen || !(model.state === 'editing' || model.state === 'verified'));
+      setDisabled(jambAction, busy || !model.jambOpen || !model.educationVerified || !(model.state === 'jamb' || model.state === 'jamb-verified'));
       if (educationAction) educationAction.setAttribute('aria-busy', String(model.state === 'verifying'));
       if (jambAction) jambAction.setAttribute('aria-busy', String(model.state === 'jamb-verifying'));
 
@@ -718,12 +750,12 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
         fields.inert = jambSuccessVisible;
       });
 
-      educationFields.forEach(function (field) { setFieldEditing(field, model.state === 'editing'); });
-      jambFields.forEach(function (field) { setFieldEditing(field, model.state === 'jamb'); });
+      educationFields.forEach(function (field) { setFieldEditing(field, model.educationOpen && model.state === 'editing'); });
+      jambFields.forEach(function (field) { setFieldEditing(field, model.jambOpen && model.state === 'jamb'); });
       setExpanded(byId('education-toggle'), byId('education-body'), model.educationOpen);
       setExpanded(byId('jamb-toggle'), byId('jamb-body'), model.jambOpen);
-      setDisabled(byId('education-toggle'), busy || accountVisible || !model.educationVerified);
-      setDisabled(byId('jamb-toggle'), busy || accountVisible || !model.advanced);
+      setDisabled(byId('education-toggle'), busy || introVisible || !model.citizenshipConfirmed);
+      setDisabled(byId('jamb-toggle'), busy || introVisible || !model.educationVerified);
       root.querySelectorAll('[data-edit]').forEach(function (button) {
         var visible = button.dataset.edit === 'education' ? educationSuccessVisible : jambSuccessVisible;
         button.setAttribute('aria-hidden', String(!visible));
@@ -736,20 +768,24 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       });
       [byId('account-card'), byId('email-card')].forEach(function (card) {
         if (!card) return;
-        var visible = card.id === 'account-card' ? model.state === 'account' : model.state === 'email' || model.state === 'email-confirmed';
-        card.inert = !visible;
-        card.setAttribute('aria-hidden', String(!visible));
+        var shown = card.id === 'account-card' ? accountShown : emailShown;
+        card.inert = !shown;
+        card.setAttribute('aria-hidden', String(!shown));
       });
       var accountFlow = root.querySelector('.account-flow');
       if (accountFlow) {
-        accountFlow.inert = !accountVisible;
-        accountFlow.setAttribute('aria-hidden', String(!accountVisible));
+        accountFlow.inert = !accountShown && !emailShown;
+        accountFlow.setAttribute('aria-hidden', String(!accountShown && !emailShown));
       }
-      accountFields.forEach(function (field) { setFieldEditing(field, model.state === 'account'); });
-      otpFields.forEach(function (field) { setFieldEditing(field, model.state === 'email'); });
-      setDisabled(byId('account-submit'), model.state !== 'account');
-      setDisabled(byId('email-confirm'), model.state !== 'email');
-      setDisabled(byId('email-resend'), model.state !== 'email' || resendSeconds > 0);
+      setExpanded(byId('account-toggle'), byId('account-body'), model.accountOpen && accountShown);
+      setExpanded(byId('email-toggle'), byId('email-body'), model.emailOpen && emailShown);
+      setDisabled(byId('account-toggle'), busy || !accountShown || !model.jambVerified);
+      setDisabled(byId('email-toggle'), busy || !emailShown || !model.accountSubmitted);
+      accountFields.forEach(function (field) { setFieldEditing(field, model.accountOpen && model.state === 'account'); });
+      otpFields.forEach(function (field) { setFieldEditing(field, model.emailOpen && model.state === 'email'); });
+      setDisabled(byId('account-submit'), busy || !model.accountOpen || model.state !== 'account');
+      setDisabled(byId('email-confirm'), busy || !model.emailOpen || model.state !== 'email');
+      setDisabled(byId('email-resend'), busy || !model.emailOpen || model.state !== 'email' || resendSeconds > 0);
       if (byId('confirmation-email') && byId('account-email')) byId('confirmation-email').textContent = byId('account-email').value.trim();
       if (byId('email-title')) byId('email-title').textContent = model.state === 'email-confirmed' ? 'Email confirmed' : 'Confirm an email';
       if (byId('email-confirm')) byId('email-confirm').textContent = model.state === 'email-confirmed' ? 'Confirmed' : 'Confirm';
@@ -799,53 +835,111 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       return false;
     }
 
+    function closeBodies() {
+      model.educationOpen = false;
+      model.jambOpen = false;
+      model.accountOpen = false;
+      model.emailOpen = false;
+    }
+
+    // Only explicit review fixtures infer completion from a requested screen.
+    // User navigation keeps completed steps and entered values independently.
     function setState(state) {
       if (validStates.indexOf(state) === -1) return false;
       cancelTimers();
+      clearTimeout(resendTimer);
       resendSeconds = 0;
+      resendDeadline = 0;
+      citizenshipReturnState = null;
       var accountVisible = accountStates.indexOf(state) !== -1;
       var advanced = state.indexOf('jamb') === 0 || accountVisible;
       var educationVerified = advanced || state === 'verified' || state === 'verified-black';
       model = {
         state: state,
         settling: false,
+        citizenshipConfirmed: state !== 'intro' && state !== 'citizenship',
         educationVerified: educationVerified,
         jambVerified: state === 'jamb-verified' || accountVisible,
+        accountSubmitted: state === 'email' || state === 'email-confirmed',
+        emailConfirmed: state === 'email-confirmed',
         educationOpen: !advanced && state !== 'intro' && state !== 'citizenship',
         jambOpen: advanced && !accountVisible,
+        accountOpen: state === 'account',
+        emailOpen: state === 'email' || state === 'email-confirmed',
         advanced: advanced,
         complete: state === 'email-confirmed',
         jambSuccessPhase: state === 'jamb-verified' || accountVisible ? 'green' : 'none'
       };
       educationSignature = educationVerified ? signature(educationFields) : null;
       jambSignature = model.jambVerified ? signature(jambFields) : null;
-      clearErrors('education');
-      clearErrors('jamb');
-      clearErrors('account');
-      clearErrors('email');
+      accountSignature = model.accountSubmitted ? signature(accountFields) : null;
+      ['education', 'jamb', 'account', 'email'].forEach(clearErrors);
       paint();
       return true;
     }
 
+    function navigate(state) {
+      if (validStates.indexOf(state) === -1) return false;
+      if (['editing', 'verified'].indexOf(state) !== -1 && !model.citizenshipConfirmed) return false;
+      if (state.indexOf('jamb') === 0 && !model.educationVerified) return false;
+      if (state === 'account' && !model.jambVerified) return false;
+      if ((state === 'email' || state === 'email-confirmed') && !model.accountSubmitted) return false;
+      cancelTimers();
+      model.settling = false;
+      closeBodies();
+      model.state = state;
+      model.educationOpen = state === 'editing' || state === 'verified';
+      model.jambOpen = state === 'jamb' || state === 'jamb-verified';
+      model.accountOpen = state === 'account';
+      model.emailOpen = state === 'email' || state === 'email-confirmed';
+      model.advanced = model.educationVerified;
+      model.complete = model.emailConfirmed;
+      if (state === 'jamb-verified') model.jambSuccessPhase = 'green';
+      var focused = document.activeElement;
+      if (focused && root.contains(focused) && focused.matches('input,select,textarea')) focused.blur();
+      paint();
+      return true;
+    }
+
+    function invalidateAccount() {
+      model.accountSubmitted = false;
+      model.emailConfirmed = false;
+      model.complete = false;
+      model.accountOpen = false;
+      model.emailOpen = false;
+      accountSignature = null;
+      clearTimeout(resendTimer);
+      resendSeconds = 0;
+      resendDeadline = 0;
+    }
+
     function verifyEducation() {
-      if (model.state !== 'editing' || isBusy() || !validate('education')) return false;
+      if (model.state !== 'editing' || !model.educationOpen || !model.citizenshipConfirmed || isBusy() || !validate('education')) return false;
       cancelTimers();
       var submitted = signature(educationFields);
+      // Rechecking unchanged data must not erase later completed steps.
+      var preserveLater = model.educationVerified && educationSignature === submitted;
+      if (!preserveLater) {
+        model.jambVerified = false;
+        model.jambSuccessPhase = 'none';
+        jambSignature = null;
+        invalidateAccount();
+      }
       model.state = 'verifying';
       model.educationVerified = false;
-      model.jambVerified = false;
-      model.jambSuccessPhase = 'none';
       model.educationOpen = true;
       model.jambOpen = false;
       model.advanced = false;
-      model.complete = false;
+      model.complete = model.emailConfirmed;
       educationSignature = null;
-      jambSignature = null;
       paint();
       announce('Verifying student information.');
       later(function () {
         if (signature(educationFields) !== submitted) {
-          beginEducationEdit();
+          model.jambVerified = false;
+          jambSignature = null;
+          invalidateAccount();
+          navigate('editing');
           return;
         }
         model.state = 'verified-black';
@@ -867,24 +961,19 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function continueEducation() {
-      if (!model.educationVerified || isBusy()) return;
-      cancelTimers();
-      model.state = model.jambVerified ? 'jamb-verified' : 'jamb';
-      model.educationOpen = false;
-      model.jambOpen = true;
-      model.advanced = true;
-      model.complete = false;
-      paint();
+      if (!model.educationVerified || !model.educationOpen || isBusy()) return;
+      navigate(model.jambVerified ? 'jamb-verified' : 'jamb');
       focusWithoutScroll(byId('jamb-toggle'));
       announce('JAMB verification section opened.');
     }
 
     function verifyJamb() {
-      if (model.state !== 'jamb' || isBusy() || !validate('jamb')) return false;
+      if (model.state !== 'jamb' || !model.jambOpen || !model.educationVerified || isBusy() || !validate('jamb')) return false;
       cancelTimers();
       var submitted = signature(jambFields);
+      if (!model.jambVerified || jambSignature !== submitted) invalidateAccount();
       model.state = 'jamb-verifying';
-      model.complete = false;
+      model.complete = model.emailConfirmed;
       model.jambVerified = false;
       model.jambSuccessPhase = 'none';
       jambSignature = null;
@@ -892,7 +981,8 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       announce('Verifying JAMB details.');
       later(function () {
         if (signature(jambFields) !== submitted) {
-          beginJambEdit();
+          invalidateAccount();
+          navigate('jamb');
           return;
         }
         model.state = 'jamb-verified';
@@ -915,17 +1005,12 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function completeJamb() {
-      if (model.state !== 'jamb-verified' || !model.jambVerified || isBusy()) return;
+      if (model.state !== 'jamb-verified' || !model.jambOpen || !model.jambVerified || isBusy()) return;
       transitionTo('account', 'Student details verified. Create an account.');
     }
 
     function transitionTo(state, message) {
-      var commit = function () {
-        setState(state);
-        if (message) announce(message);
-      };
-      if (window.slasPageMotion) window.slasPageMotion.transition(state, commit);
-      else commit();
+      if (navigate(state) && message) announce(message);
     }
 
     function showError(section, field, message) {
@@ -944,7 +1029,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function createAccount() {
-      if (model.state !== 'account' || isBusy()) return false;
+      if (model.state !== 'account' || !model.accountOpen || !model.jambVerified || isBusy()) return false;
       clearErrors('account');
       var email = byId('account-email');
       var password = byId('account-password');
@@ -955,37 +1040,44 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       if (password.value.length < 8) return showError('account', password, 'Use at least 8 characters for your password.');
       if (confirmation.value !== password.value) return showError('account', confirmation, 'Passwords must match.');
       // Local demo only: no account is created and no email is sent.
-      otpFields.forEach(function (field) { field.value = ''; });
+      var unchanged = model.accountSubmitted && accountSignature === signature(accountFields);
+      if (!unchanged) otpFields.forEach(function (field) { field.value = ''; });
+      model.accountSubmitted = true;
+      model.emailConfirmed = false;
+      model.complete = false;
+      accountSignature = signature(accountFields);
       transitionTo('email', 'Email confirmation. This prototype does not send an email.');
       return true;
     }
 
     function confirmEmail() {
-      if (model.state !== 'email' || isBusy()) return false;
+      if (model.state !== 'email' || !model.emailOpen || !model.accountSubmitted || isBusy()) return false;
       clearErrors('email');
       var invalid = otpFields.find(function (field) { return !/^[0-9]$/.test(field.value); });
       if (otpFields.length !== 6 || invalid) return showError('email', invalid || otpFields[0], 'Enter the complete 6-digit code.');
       // Any six digits complete the local demonstration; there is no verification API.
-      setState('email-confirmed');
+      model.emailConfirmed = true;
+      model.complete = true;
+      navigate('email-confirmed');
       announce('Email confirmed.');
       return true;
     }
 
     function resendEmail() {
-      if (model.state !== 'email' || resendSeconds > 0 || isBusy()) return;
-      cancelTimers();
+      if (model.state !== 'email' || !model.emailOpen || !model.accountSubmitted || resendSeconds > 0 || isBusy()) return;
+      resendDeadline = Date.now() + 30000;
       resendSeconds = 30;
       clearErrors('email');
       paint();
       function tick() {
-        if (model.state !== 'email') return;
-        resendSeconds = Math.max(0, resendSeconds - 1);
+        resendSeconds = Math.max(0, Math.ceil((resendDeadline - Date.now()) / 1000));
         var resend = byId('email-resend');
         if (resend) resend.textContent = resendSeconds > 0 ? 'Resend in ' + resendSeconds + ' s' : 'Resend';
-        setDisabled(resend, resendSeconds > 0);
-        if (resendSeconds > 0) later(tick, 1000);
+        setDisabled(resend, model.state !== 'email' || !model.emailOpen || resendSeconds > 0);
+        if (resendSeconds > 0) resendTimer = setTimeout(tick, 1000);
       }
-      later(tick, 1000);
+      clearTimeout(resendTimer);
+      resendTimer = setTimeout(tick, 1000);
     }
 
     function distributeDigits(start, raw) {
@@ -998,35 +1090,21 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function beginEducationEdit() {
-      cancelTimers();
-      model.state = 'editing';
-      model.complete = false;
-      model.settling = false;
-      model.educationOpen = true;
-      model.jambOpen = false;
+      if (!model.citizenshipConfirmed || isBusy()) return;
       clearErrors('education');
-      paint();
+      navigate('editing');
       focusWithoutScroll(educationFields[0]);
     }
 
     function beginJambEdit() {
-      if (!model.educationVerified) return;
-      cancelTimers();
-      model.state = 'jamb';
-      model.complete = false;
-      model.settling = false;
-      model.advanced = true;
-      model.educationOpen = false;
-      model.jambOpen = true;
-      model.jambSuccessPhase = 'none';
+      if (!model.educationVerified || isBusy()) return;
       clearErrors('jamb');
-      paint();
+      navigate('jamb');
       focusWithoutScroll(jambFields[0]);
     }
 
     function handleFieldChange(section) {
       clearErrors(section);
-      model.complete = false;
       if (section === 'education' && educationSignature !== null && signature(educationFields) !== educationSignature) {
         cancelTimers();
         model.educationVerified = false;
@@ -1039,6 +1117,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
         model.jambSuccessPhase = 'none';
         educationSignature = null;
         jambSignature = null;
+        invalidateAccount();
       } else if (section === 'jamb' && jambSignature !== null && signature(jambFields) !== jambSignature) {
         cancelTimers();
         model.jambVerified = false;
@@ -1046,6 +1125,11 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
         model.state = 'jamb';
         model.jambSuccessPhase = 'none';
         jambSignature = null;
+        invalidateAccount();
+      } else if (section === 'account' && accountSignature !== null && signature(accountFields) !== accountSignature) {
+        invalidateAccount();
+        model.state = 'account';
+        model.accountOpen = true;
       }
       paint();
     }
@@ -1065,28 +1149,42 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       later(verifyEducation, 180);
     }
 
+    function reviewCitizenship() {
+      if (isBusy()) return;
+      if (model.state !== 'citizenship') citizenshipReturnState = model.state;
+      navigate('citizenship');
+    }
+
     function goBack() {
+      if (isBusy()) {
+        var jambBusy = model.state.indexOf('jamb') === 0;
+        navigate(jambBusy ? (model.jambVerified ? 'jamb-verified' : 'jamb') : (model.educationVerified ? 'verified' : 'editing'));
+        announce('Returned to the current section.');
+        return;
+      }
       if (model.state === 'email' || model.state === 'email-confirmed') {
         transitionTo('account', 'Returned to account details.');
       } else if (model.state === 'account') {
-        transitionTo('jamb-verified', 'Returned to verified JAMB details.');
+        transitionTo(model.jambVerified ? 'jamb-verified' : 'jamb', 'Returned to JAMB details.');
       } else if (model.state.indexOf('jamb') === 0) {
-        setState('verified');
+        navigate(model.educationVerified ? 'verified' : 'editing');
         focusWithoutScroll(byId('education-toggle'));
-        announce('Returned to verified student information.');
-      } else if (model.state === 'editing') {
-        setState('citizenship');
-        announce('Returned to citizenship confirmation.');
+        announce('Returned to student information.');
       } else if (model.state === 'citizenship') {
-        setState('intro');
+        navigate('intro');
         announce('Returned to the introduction.');
       } else if (model.state !== 'intro') {
-        setState('editing');
-        focusWithoutScroll(educationFields[0]);
-        announce('Returned to student information.');
-      } else {
-        reset();
+        reviewCitizenship();
+        announce('Returned to citizenship confirmation.');
       }
+    }
+
+    function toggleSection(section, state) {
+      if (isBusy()) return;
+      if (model[section + 'Open']) {
+        model[section + 'Open'] = false;
+        paint();
+      } else navigate(state);
     }
 
     function onClick(id, handler) {
@@ -1103,32 +1201,42 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       else continueEducation();
     });
     onClick('intro-start', function () {
-      if (model.state === 'intro') setState('citizenship');
+      if (model.state === 'intro') navigate('citizenship');
     });
     onClick('citizenship-yes', function () {
-      if (model.state === 'citizenship') setState('editing');
+      if (model.state !== 'citizenship') return;
+      var returnState = model.citizenshipConfirmed && citizenshipReturnState;
+      model.citizenshipConfirmed = true;
+      citizenshipReturnState = null;
+      navigate(returnState || (model.educationVerified ? 'verified' : 'editing'));
     });
     onClick('citizenship-no', function () {
       if (model.state === 'citizenship') setState('intro');
     });
     onClick('citizenship-toggle', function () {
-      if (model.state !== 'intro' && accountStates.indexOf(model.state) === -1 && !isBusy()) setState('citizenship');
+      if (model.state === 'intro' || isBusy()) return;
+      if (model.state === 'citizenship' && model.citizenshipConfirmed) {
+        navigate(citizenshipReturnState || (model.educationVerified ? 'verified' : 'editing'));
+        citizenshipReturnState = null;
+      } else reviewCitizenship();
     });
     onClick('jamb-action', function () {
       if (model.state === 'jamb-verified') completeJamb();
       else verifyJamb();
     });
     onClick('education-toggle', function () {
-      if (isBusy() || !model.educationVerified || accountStates.indexOf(model.state) !== -1) return;
-      model.educationOpen = !model.educationOpen;
-      model.jambOpen = model.advanced && !model.educationOpen;
-      paint();
+      if (!model.citizenshipConfirmed) return;
+      toggleSection('education', model.educationVerified ? 'verified' : 'editing');
     });
     onClick('jamb-toggle', function () {
-      if (isBusy() || !model.advanced || accountStates.indexOf(model.state) !== -1) return;
-      model.jambOpen = !model.jambOpen;
-      model.educationOpen = !model.jambOpen;
-      paint();
+      if (!model.educationVerified) return;
+      toggleSection('jamb', model.jambVerified ? 'jamb-verified' : 'jamb');
+    });
+    onClick('account-toggle', function () {
+      if (model.jambVerified) toggleSection('account', 'account');
+    });
+    onClick('email-toggle', function () {
+      if (model.accountSubmitted) toggleSection('email', model.emailConfirmed ? 'email-confirmed' : 'email');
     });
     onClick('reset-prototype', reset);
     onClick('replay-prototype', replay);
@@ -1160,7 +1268,8 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       field.addEventListener('change', function () { handleFieldChange('jamb'); });
     });
     accountFields.forEach(function (field) {
-      field.addEventListener('input', function () { clearErrors('account'); });
+      field.addEventListener('input', function () { handleFieldChange('account'); });
+      field.addEventListener('change', function () { handleFieldChange('account'); });
     });
     otpFields.forEach(function (field, index) {
       field.addEventListener('beforeinput', function (event) {
@@ -1240,115 +1349,43 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
   else boot();
 }());
 </script>
-  <script>/* Sequential screen changes; the progress header and auth surface stay mounted. */
+  <script>/* All forms use the same height-based accordion. No page fades or scroll reset. */
 (function () {
   function boot() {
     var root = document.getElementById('prototype');
-    var flow = root && root.querySelector('.account-flow');
-    if (!root || !flow) return;
-    var panes = [document.getElementById('account-card'), document.getElementById('email-card')];
-    var accountStates = ['account', 'email', 'email-confirmed'];
-    var previousState = root.dataset.state;
-    var active = false, committing = false, token = 0, running = [];
-    var originalMinHeight = '', timer, resolveTimer;
-
-    function isAccount(state) { return accountStates.indexOf(state) !== -1; }
-    function pane(state) { return state === 'account' ? panes[0] : panes[1]; }
-    function reduced() { return root.dataset.reducedMotion === 'true'; }
-    function normalizeScroll() { if (window.scrollY > 16) window.scrollTo({ top: 0, behavior: 'auto' }); }
-
-    function setHeight(animate) {
-      var state = root.dataset.state;
-      if (!isAccount(state)) return;
-      var height = Math.ceil(pane(state).getBoundingClientRect().height);
-      if (flow.style.height === height + 'px') return;
-      if (!animate || reduced()) flow.style.transition = 'none';
-      flow.style.height = height + 'px';
-      if (!animate || reduced()) {
-        flow.getBoundingClientRect();
-        flow.style.removeProperty('transition');
-      }
+    if (!root) return;
+    var entries = [
+      { card: document.getElementById('account-card'), body: document.getElementById('account-body'), variable: '--account-expanded-height' },
+      { card: document.getElementById('email-card'), body: document.getElementById('email-body'), variable: '--email-expanded-height' }
+    ].filter(function (entry) { return entry.card && entry.body; });
+    var hints = [
+      { card: document.getElementById('education-card'), hint: document.getElementById('matric-hint') },
+      { card: document.getElementById('jamb-card'), hint: document.getElementById('jamb-hint') }
+    ].filter(function (entry) { return entry.card && entry.hint; });
+    function measureHint(entry) {
+      var extra = Math.max(0, Math.ceil(entry.hint.getBoundingClientRect().height) - 18);
+      if (entry.card.style.getPropertyValue('--helper-extra') !== extra + 'px') entry.card.style.setProperty('--helper-extra', extra + 'px');
     }
-
-    function clean() {
-      running.forEach(function (animation) { animation.cancel(); });
-      running = [];
-      clearTimeout(timer);
-      if (resolveTimer) { resolveTimer(); resolveTimer = null; }
-      root.style.minHeight = originalMinHeight;
-      delete root.dataset.routeTransition;
-      root.setAttribute('aria-busy', String(root.dataset.state.indexOf('verifying') !== -1 || root.dataset.state === 'verified-black' || root.dataset.settling === 'true'));
-      active = false;
+    function measure(entry) {
+      var height = Math.ceil(55 + entry.body.getBoundingClientRect().height);
+      if (height > 55 && entry.card.style.getPropertyValue(entry.variable) !== height + 'px') entry.card.style.setProperty(entry.variable, height + 'px');
     }
-
-    root.addEventListener('slas:statechange', function () {
-      if (active && !committing) { token += 1; clean(); }
-      setHeight(isAccount(previousState));
-      previousState = root.dataset.state;
-    });
+    entries.forEach(measure);
+    hints.forEach(measureHint);
     if (window.ResizeObserver) {
-      var observer = new ResizeObserver(function () { setHeight(true); });
-      panes.forEach(function (element) { if (element) observer.observe(element); });
-    }
-    setHeight(false);
-
-    // Ignore a second tap while the visual handoff is still in progress.
-    ['pointerdown', 'click', 'submit', 'keydown'].forEach(function (type) {
-      root.addEventListener(type, function (event) {
-        if (!active) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      }, true);
-    });
-
-    function animate(element, frames, options) {
-      var animation = element.animate(frames, options);
-      running.push(animation);
-      return animation.finished.catch(function () {});
-    }
-
-    async function transition(nextState, commit) {
-      if (active) return false;
-      var current = root.dataset.state;
-      var fromAccount = isAccount(current), toAccount = isAccount(nextState);
-      var oldElement = fromAccount ? (toAccount ? pane(current) : flow) : root.querySelector('.section-stack');
-      var focused = document.activeElement;
-      if (focused && oldElement.contains(focused) && focused.matches('input,select,textarea')) focused.blur();
-      if (reduced() || !oldElement.animate) { commit(); setHeight(false); normalizeScroll(); return true; }
-
-      active = true;
-      var id = ++token;
-      originalMinHeight = root.style.minHeight;
-      root.style.minHeight = root.getBoundingClientRect().height + 'px';
-      root.dataset.routeTransition = 'out';
-      root.setAttribute('aria-busy', 'true');
-      try {
-        await animate(oldElement, [{ opacity: 1 }, { opacity: 0 }], {
-          duration: 160, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards'
+      var observer = new ResizeObserver(function (changes) {
+        changes.forEach(function (change) {
+          var entry = entries.find(function (item) { return item.body === change.target; });
+          if (entry) measure(entry);
+          var hint = hints.find(function (item) { return item.hint === change.target; });
+          if (hint) measureHint(hint);
         });
-        if (id !== token) return false;
-        committing = true;
-        commit();
-        committing = false;
-        // Normalize only when needed and while both contents are invisible.
-        normalizeScroll();
-        var incoming = toAccount ? (fromAccount ? pane(nextState) : flow) : root.querySelector('.section-stack');
-        root.dataset.routeTransition = 'in';
-        root.setAttribute('aria-busy', 'true');
-        var entrance = animate(incoming, [{ opacity: 0 }, { opacity: 1 }], {
-          duration: 280, delay: 60, easing: 'cubic-bezier(.2,0,.2,1)', fill: 'both'
-        });
-        await Promise.all([entrance, new Promise(function (resolve) { resolveTimer = resolve; timer = setTimeout(resolve, 420); })]);
-        if (id !== token) return false;
-        clean();
-        return true;
-      } catch (error) {
-        committing = false;
-        if (id === token) clean();
-        throw error;
-      }
+      });
+      entries.forEach(function (entry) { observer.observe(entry.body); });
+      hints.forEach(function (entry) { observer.observe(entry.hint); });
     }
-    window.slasPageMotion = Object.freeze({ transition: transition });
+    root.addEventListener('slas:statechange', function () { entries.forEach(measure); hints.forEach(measureHint); });
+    window.slasPageMotion = Object.freeze({ transition: function (_, commit) { commit(); return Promise.resolve(true); } });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();
@@ -1429,6 +1466,203 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
 .action-button.continuous-corners .continuous-focus,
 #citizenship-yes.continuous-corners .continuous-focus{stroke:#fff}
 .device[data-input-method=pointer] button.continuous-corners .continuous-focus{opacity:0}
+
+/* Local review queue: shared form rhythm. Load after flow and mobile styles. */
+#prototype {
+  --form-heading-gap: 12px;
+  --form-group-gap: 24px;
+  --form-action-gap: 32px;
+  --form-title-top: 55px;
+  --form-first-field-top: 112px;
+  --form-entry-second-top: 210px;
+  --form-entry-action-top: 338px;
+}
+
+/* 24px inset + 19px section label + 12px gap, then a 33px title. */
+.verification-card .section-trigger {
+  height: 19px;
+  line-height: 19px;
+}
+.verification-card .card-title,
+.jamb-card .card-title {
+  top: var(--form-title-top);
+}
+[data-education-open=true] .education-card .section-trigger,
+[data-jamb-open=true] .jamb-card .section-trigger {
+  top: 24px;
+}
+
+/* Entry groups: 22px label + 4px gap + 48px control. */
+.education-card .institution-field,
+.jamb-card .dob-field {
+  top: var(--form-first-field-top);
+}
+.education-card .matric-field,
+.jamb-card .jamb-number-field {
+  top: var(--form-entry-second-top);
+}
+.education-card .field-hint,
+.jamb-card .field-hint {
+  margin-top: 4px;
+  line-height: 18px;
+}
+.education-card .education-action,
+.jamb-card .jamb-action {
+  top: var(--form-entry-action-top);
+}
+[data-education-open=true] .education-card,
+[data-jamb-open=true] .jamb-card {
+  height: 410px;
+}
+
+/* Verified education: 22px label + 24px value; no helper row. */
+#prototype[data-education-success-visible=true] .education-card {
+  height: 332px;
+}
+#prototype[data-education-success-visible=true] .education-card .institution-field {
+  top: 112px;
+}
+#prototype[data-education-success-visible=true] .education-card .matric-field {
+  top: 182px;
+}
+#prototype[data-education-success-visible=true] .education-card .matric-field input {
+  transform: none;
+}
+#prototype[data-education-success-visible=true] .education-card .education-action {
+  top: 260px;
+}
+
+/* Verified JAMB uses the same 46px summary groups, 24px apart. */
+.jamb-summary .summary-row:first-of-type {
+  top: 112px;
+}
+.jamb-summary .summary-row:nth-of-type(2) {
+  top: 182px;
+}
+.jamb-summary .summary-row:nth-of-type(3) {
+  top: 252px;
+}
+.jamb-summary .student-avatar {
+  top: 112px;
+}
+#prototype[data-jamb-success-visible=true] .jamb-card,
+[data-state=jamb-verified] .jamb-card {
+  height: 402px;
+}
+#prototype[data-jamb-success-visible=true] .jamb-card .jamb-action,
+[data-state=jamb-verified] .jamb-card .jamb-action {
+  top: 330px;
+}
+
+/* Citizenship keeps the approved 40px / 14px paired actions. */
+.device[data-state=citizenship] .citizenship-card {
+  height: 244px;
+}
+.device[data-state=citizenship] .citizenship-card .compact-row {
+  top: 24px;
+  height: 19px;
+  line-height: 19px;
+}
+#citizenship-body h3 {
+  top: var(--form-title-top);
+  font-size: 24px;
+  line-height: 33px;
+}
+#citizenship-body p {
+  top: 100px;
+}
+.citizenship-actions {
+  top: 180px;
+  height: 40px;
+}
+.citizenship-actions button {
+  height: 40px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* Account/email stay in document flow so wrapped text grows their surface. */
+.account-flow .account-fields {
+  margin-top: var(--form-group-gap);
+  gap: var(--form-group-gap);
+}
+.account-flow .account-card .auth-accordion-body > .account-action {
+  margin-top: var(--form-action-gap);
+}
+.account-flow .email-description {
+  font-size: 16px;
+  line-height: 24px;
+}
+.account-flow .email-code-field {
+  margin-top: var(--form-group-gap);
+}
+.account-flow .email-actions {
+  margin-top: var(--form-action-gap);
+  gap: 8px;
+}
+
+/* Wrapped helper copy owns its extra height, keeping the 32px action gap. */
+#prototype[data-education-open=true][data-education-success-visible=false] .education-card,
+#prototype[data-jamb-open=true][data-jamb-success-visible=false] .jamb-card{height:calc(410px + var(--helper-extra,0px))}
+#prototype[data-education-success-visible=false] .education-action,
+#prototype[data-jamb-success-visible=false] .jamb-action{top:calc(338px + var(--helper-extra,0px))}
+#prototype[data-education-success-visible=true] .education-slot,
+#prototype[data-jamb-success-visible=true] .jamb-slot{width:4.21em}
+/* Keep validation errors adjacent to the actions, without a second 32px gap. */
+.account-flow .account-card .auth-accordion-body > .account-error:not([hidden]) + .account-action,
+.account-flow .email-card .auth-accordion-body > .account-error:not([hidden]) + .email-actions {
+  margin-top: 16px;
+}
+
+/* LOCAL QUEUE — consistent accordion sections; not published. */
+#prototype[data-account-visible=true] .section-stack{display:flex}
+#prototype .account-flow,
+#prototype[data-account-visible=true] .account-flow{display:contents;position:static;inset:auto;width:auto;height:auto!important;background:transparent;border-radius:0;overflow:visible;transition:none}
+#prototype .account-flow .account-pane{
+  position:relative;inset:auto;grid-area:auto;flex-shrink:0;width:100%;height:50px;
+  margin:0;padding:0;opacity:1;visibility:visible;pointer-events:auto;
+  background:#fff;transform:none;transition:height var(--morph) var(--ease),margin-top var(--morph) var(--ease),opacity 180ms ease;
+}
+#prototype .auth-accordion-body{
+  position:absolute;top:55px;left:0;right:0;padding:0 var(--mobile-inset,24px) 24px;
+  opacity:0;pointer-events:none;transition:opacity 120ms ease;
+}
+#prototype[data-account-open=true] #account-card{height:var(--account-expanded-height,486px)}
+#prototype[data-email-open=true] #email-card{height:var(--email-expanded-height,406px)}
+#prototype[data-account-open=true] #account-body,
+#prototype[data-email-open=true] #email-body{opacity:1;pointer-events:auto;transition:opacity 210ms ease 120ms}
+#prototype #account-toggle,#prototype #email-toggle{top:15.5px;height:19px;line-height:19px}
+#prototype[data-account-open=true] #account-toggle,
+#prototype[data-email-open=true] #email-toggle{top:24px}
+#prototype[data-account-open=false] #account-card .chevron-open,
+#prototype[data-email-open=false] #email-card .chevron-open{opacity:0;transform:rotate(180deg)}
+#prototype[data-account-open=false] #account-card .chevron-closed,
+#prototype[data-email-open=false] #email-card .chevron-closed{opacity:1;transform:none}
+#prototype[data-account-open=true] #account-card .chevron-open,
+#prototype[data-email-open=true] #email-card .chevron-open{opacity:1;transform:none}
+#prototype[data-account-open=true] #account-card .chevron-closed,
+#prototype[data-email-open=true] #email-card .chevron-closed{opacity:0;transform:rotate(-180deg)}
+#prototype[data-account-shown=false] #account-card,
+#prototype[data-email-shown=false] #email-card{height:0!important;margin-top:-4px;opacity:0;pointer-events:none}
+#prototype[data-account-submitted=false] #email-card .chevrons{opacity:0}
+#prototype[data-account-submitted=true] #account-card .status-empty,
+#prototype[data-email-confirmed=true] #email-card .status-empty{opacity:0;transform:scale(.85)}
+#prototype[data-account-submitted=true][data-account-open=true] #account-card .status-check,
+#prototype[data-email-confirmed=true][data-email-open=true] #email-card .status-check{opacity:1;transform:scale(1)}
+#prototype[data-account-submitted=true][data-account-open=false] #account-card .status-check-muted,
+#prototype[data-email-confirmed=true][data-email-open=false] #email-card .status-check-muted{opacity:1;transform:scale(1)}
+#prototype[data-education-verified=true][data-education-open=false] .education-card .status-check,
+#prototype[data-jamb-verified=true][data-jamb-open=false] .jamb-card .status-check{opacity:0}
+#prototype[data-education-verified=true][data-education-open=false] .education-card .status-check-muted,
+#prototype[data-jamb-verified=true][data-jamb-open=false] .jamb-card .status-check-muted{opacity:1;transform:scale(1)}
+#prototype[data-citizenship-verified=true][data-citizenship-open=true] .citizenship-confirmed{opacity:1}
+#prototype[data-citizenship-verified=true][data-citizenship-open=true] .citizenship-unconfirmed{opacity:0}
+/* Editing an unchanged record preserves completion but exposes its inputs. */
+#prototype[data-jamb-success-visible=false] .jamb-summary{opacity:0;visibility:hidden;pointer-events:none}
+#prototype[data-jamb-success-visible=false] .jamb-input-fields{opacity:1;visibility:visible;pointer-events:auto}
+#prototype[data-jamb-success-visible=false] .jamb-card .action-success{opacity:0}
+#prototype[data-state=jamb] .jamb-card .action-edit{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){#prototype .account-pane,#prototype .auth-accordion-body{transition:none}}
 </style></head>
 <body>
   <main class="studio">
@@ -1487,7 +1721,7 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
 
           <section class="verification-card education-card" id="education-card">
             <button class="section-trigger" id="education-toggle" aria-expanded="true" aria-controls="education-body" disabled>
-              <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"></span>
+              <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="status-check-muted" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
               <span>Institution &amp; Matric Number</span>
               <span class="chevrons"><img class="chevron-open" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABqUlEQVR4nOWZsa6CMBiFjycmuuHm5sioi6w8gW/A8/EGbjoyOnX0Ddh0Y8P8JjfxGvWSCPxczpeQtKVpe07+kv5lUtd1DWEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcaZeE18uF5xOp3t5u91isVi4rGPi8V+gLEvkeY6qqu71+XyOLMuwXC7HvwXKJ/GGla3N3o06AkII2O/3H/vsdjus1+vxRUBoIN6wPtZ3VAaEhuI9TODQxPdtAj3F2363x9OEqaf4x4/du74/7V19GDkE8Vb2igR6i/c2gUMQ72kChyLeywQOSbyHCfx2ADu/tym+qQnH47GV3IFtJDZdnes/mdBWAsVv8vnnrK6LpKaJCbaW3g0oiuKleMvt287o/jLB1tL7SbB6I76riw0zwcZ9FXXvorDTCEiS5Fe9j1sdG9vmsLkeiePY50IkhIDz+YzZbIY0TRFFEfrger3icDjc591sNlitVv/rTnBIEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDi0HsB3twAgQb9vcYNrjsAAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="chevron-closed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB2klEQVR4nOXarZLCQBAE4KbrBC64OHDIOCQOicTxbEjegDdAokBG4nDgQOVqUpcruCP8JNnJXfXnQlWSmYbNZrfoZFmWQRghjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYS4jzon7/d7bLdbXC4XTCYT9Ho9eDgej1iv1/l9h8MhkiTxD2C322G1Wt2EMZ/PEccxQjocDlgulzifz/lxmqaIogiDwcB3CKRpenNsBVlhVqBX84XNZlP5mqx6Yrfb/fWZFbZYLPJfR9PsmveaL6sleADj8bj0xjY0mgyhGG5lzVst7gFEUZSP+dAh/HzWXLN7Ww1WSyvTYBzHQUN41Lxp4qHLWmd/hWBTYJmqITxrfjqdNjLjsPYVgHwetoKaCuGV5uvM/UHeBJOGQvBsvvFX4boheDcfZC1QNYQ2mg+2GHo3hLaar70YeqQouKyx68/bat50Qv9L7Nm3+0jo5l32A54Nhzabd9sQeTcEr+Zdd4ReDcGzeZdnwKtreltPzGYz9Pt9z3LgHsC9EIpVXejdpD8TgDmdTt87OaPRqNaS9l8G8FcQ4ghxhDhCHCGOEEeII8QR4ghxhDhCHCGOEEeII8QR4th2AW37BIDR/AbM1QX6AAAAAElFTkSuQmCC" alt="" width="16" height="16"></span>
             </button>
@@ -1525,7 +1759,7 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
 
           <section class="verification-card jamb-card" id="jamb-card">
             <button class="section-trigger" id="jamb-toggle" aria-expanded="false" aria-controls="jamb-body" disabled>
-              <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"></span>
+              <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="status-check-muted" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
               <span>JUMB registration</span>
               <span class="chevrons"><img class="chevron-open" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABqUlEQVR4nOWZsa6CMBiFjycmuuHm5sioi6w8gW/A8/EGbjoyOnX0Ddh0Y8P8JjfxGvWSCPxczpeQtKVpe07+kv5lUtd1DWEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcaZeE18uF5xOp3t5u91isVi4rGPi8V+gLEvkeY6qqu71+XyOLMuwXC7HvwXKJ/GGla3N3o06AkII2O/3H/vsdjus1+vxRUBoIN6wPtZ3VAaEhuI9TODQxPdtAj3F2363x9OEqaf4x4/du74/7V19GDkE8Vb2igR6i/c2gUMQ72kChyLeywQOSbyHCfx2ADu/tym+qQnH47GV3IFtJDZdnes/mdBWAsVv8vnnrK6LpKaJCbaW3g0oiuKleMvt287o/jLB1tL7SbB6I76riw0zwcZ9FXXvorDTCEiS5Fe9j1sdG9vmsLkeiePY50IkhIDz+YzZbIY0TRFFEfrger3icDjc591sNlitVv/rTnBIEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDi0HsB3twAgQb9vcYNrjsAAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="chevron-closed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB2klEQVR4nOXarZLCQBAE4KbrBC64OHDIOCQOicTxbEjegDdAokBG4nDgQOVqUpcruCP8JNnJXfXnQlWSmYbNZrfoZFmWQRghjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYS4jzon7/d7bLdbXC4XTCYT9Ho9eDgej1iv1/l9h8MhkiTxD2C322G1Wt2EMZ/PEccxQjocDlgulzifz/lxmqaIogiDwcB3CKRpenNsBVlhVqBX84XNZlP5mqx6Yrfb/fWZFbZYLPJfR9PsmveaL6sleADj8bj0xjY0mgyhGG5lzVst7gFEUZSP+dAh/HzWXLN7Ww1WSyvTYBzHQUN41Lxp4qHLWmd/hWBTYJmqITxrfjqdNjLjsPYVgHwetoKaCuGV5uvM/UHeBJOGQvBsvvFX4boheDcfZC1QNYQ2mg+2GHo3hLaar70YeqQouKyx68/bat50Qv9L7Nm3+0jo5l32A54Nhzabd9sQeTcEr+Zdd4ReDcGzeZdnwKtreltPzGYz9Pt9z3LgHsC9EIpVXejdpD8TgDmdTt87OaPRqNaS9l8G8FcQ4ghxhDhCHCGOEEeII8QR4ghxhDhCHCGOEEeII8QR4th2AW37BIDR/AbM1QX6AAAAAElFTkSuQmCC" alt="" width="16" height="16"></span>
             </button>
@@ -1546,7 +1780,7 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
                 <img class="student-avatar" src="data:image/webp;base64,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" alt="Student profile" width="44" height="44">
                 <div class="summary-row"><span class="summary-label">Name</span><span class="summary-value">Kelechi Adunaro</span></div>
                 <div class="summary-row"><span class="summary-label">NIN</span><span class="summary-value">12345678901</span></div>
-                <div class="summary-row"><span class="summary-label">JAMB Reg No.</span><span class="summary-value">2026123456AB</span><button class="edit-button" data-edit="jamb" data-focus="jamb-number" aria-label="Edit JAMB registration number"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACcUlEQVR4nOWaQUsbQRiG33wI2ZObU5KLmoOI0GI9W4KFClKp6EGw0EN/Sy+99Ff0ULDQQwVpK0pFaO+L9iD1ovGyGy/ZnjaXpkxgodJNGJPMzDcz7y3LZmefh5lhv5kp9Xq9HjwOwfMQPA/B8xA8D8HzEDwPwfMQPA/B80yBabKsi7idII5v+78bjRnUq1U/BMRJGx8+fkInTe9cX1yYx/raU1Qq0xNrq8StFhDw797v9XtAUSphiFcvX0xMAsEieBHRK8Q9nc5vtwTEEvAqJJQ4DIHo7CcOj78VwgdBWelwIDCA3z/4MhBeAK42HyvrCQQG8EXJ4eu1Kp40V5RJIDCHz6NKAsECeJUSCJbAq5JAsAhehQSCZfCTlkCwEH6SEgiWwstK2D/4bE5ApBheRsJV6wZxu61fQKQJXkZCHGsWEGmG/3e9oChZN9MnIDIEn1eTRanXanoERIbhiwoqUTE2ZmfUC4gYwot2d3e2h/6fXIUXkWmXXIXfer4h1S65Cr+89EDqWeQz/MgCXIEfSYBL8PcW4Br8vQRc/Lp0Dl5agHgJF+GlBIgFhWFfWjbDSwk4/f7DWXgpAVfXLWfh5YZA+v+a2mpzxQn4kT+EgnIAF+BZbI6ahGchwCS8cQGm4Y0K4ABvTAAXeCMCOMFrF8ANXqsAjvDaBHCFH/mo7HXrRhywk77/8OhkIHx/06L0B9H5OcaN2ATJU6/W+jXL2OcEX795CxsjW7ARHI3ocYMWcbwQkM89YwuYG7KxyD2Plh6OPwd00hRfj06QJAmyblfqMLPpsR+UywjDENubz+5MjGwPS5sMwfMQPA+ZfgHT+Qsgx3CF4+FbHAAAAABJRU5ErkJggg==" alt="" width="16" height="16"></button></div>
+                <div class="summary-row"><span class="summary-label">JAMB Reg No.</span><span class="summary-value" data-value-for="jamb-number">2026123456AB</span><button class="edit-button" data-edit="jamb" data-focus="jamb-number" aria-label="Edit JAMB registration number"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACcUlEQVR4nOWaQUsbQRiG33wI2ZObU5KLmoOI0GI9W4KFClKp6EGw0EN/Sy+99Ff0ULDQQwVpK0pFaO+L9iD1ovGyGy/ZnjaXpkxgodJNGJPMzDcz7y3LZmefh5lhv5kp9Xq9HjwOwfMQPA/B8xA8D8HzEDwPwfMQPA/B80yBabKsi7idII5v+78bjRnUq1U/BMRJGx8+fkInTe9cX1yYx/raU1Qq0xNrq8StFhDw797v9XtAUSphiFcvX0xMAsEieBHRK8Q9nc5vtwTEEvAqJJQ4DIHo7CcOj78VwgdBWelwIDCA3z/4MhBeAK42HyvrCQQG8EXJ4eu1Kp40V5RJIDCHz6NKAsECeJUSCJbAq5JAsAhehQSCZfCTlkCwEH6SEgiWwstK2D/4bE5ApBheRsJV6wZxu61fQKQJXkZCHGsWEGmG/3e9oChZN9MnIDIEn1eTRanXanoERIbhiwoqUTE2ZmfUC4gYwot2d3e2h/6fXIUXkWmXXIXfer4h1S65Cr+89EDqWeQz/MgCXIEfSYBL8PcW4Br8vQRc/Lp0Dl5agHgJF+GlBIgFhWFfWjbDSwk4/f7DWXgpAVfXLWfh5YZA+v+a2mpzxQn4kT+EgnIAF+BZbI6ahGchwCS8cQGm4Y0K4ABvTAAXeCMCOMFrF8ANXqsAjvDaBHCFH/mo7HXrRhywk77/8OhkIHx/06L0B9H5OcaN2ATJU6/W+jXL2OcEX795CxsjW7ARHI3ocYMWcbwQkM89YwuYG7KxyD2Plh6OPwd00hRfj06QJAmyblfqMLPpsR+UywjDENubz+5MjGwPS5sMwfMQPA+ZfgHT+Qsgx3CF4+FbHAAAAABJRU5ErkJggg==" alt="" width="16" height="16"></button></div>
               </div>
               <p class="field-error" id="jamb-error" hidden></p>
               <button class="action-button jamb-action" id="jamb-action">
@@ -1556,9 +1790,13 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
               </button>
             </div>
           </section>
-        </div>
 <section class="account-flow" aria-label="Create and confirm your account">
   <form class="verification-card account-pane account-card" id="account-card" aria-labelledby="account-title" aria-hidden="true" inert novalidate autocomplete="off">
+    <button class="section-trigger" type="button" id="account-toggle" aria-expanded="false" aria-controls="account-body" disabled>
+      <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="status-check-muted" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
+      <span>Account details</span><span class="chevrons"><img class="chevron-open" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABqUlEQVR4nOWZsa6CMBiFjycmuuHm5sioi6w8gW/A8/EGbjoyOnX0Ddh0Y8P8JjfxGvWSCPxczpeQtKVpe07+kv5lUtd1DWEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcaZeE18uF5xOp3t5u91isVi4rGPi8V+gLEvkeY6qqu71+XyOLMuwXC7HvwXKJ/GGla3N3o06AkII2O/3H/vsdjus1+vxRUBoIN6wPtZ3VAaEhuI9TODQxPdtAj3F2363x9OEqaf4x4/du74/7V19GDkE8Vb2igR6i/c2gUMQ72kChyLeywQOSbyHCfx2ADu/tym+qQnH47GV3IFtJDZdnes/mdBWAsVv8vnnrK6LpKaJCbaW3g0oiuKleMvt287o/jLB1tL7SbB6I76riw0zwcZ9FXXvorDTCEiS5Fe9j1sdG9vmsLkeiePY50IkhIDz+YzZbIY0TRFFEfrger3icDjc591sNlitVv/rTnBIEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDi0HsB3twAgQb9vcYNrjsAAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="chevron-closed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB2klEQVR4nOXarZLCQBAE4KbrBC64OHDIOCQOicTxbEjegDdAokBG4nDgQOVqUpcruCP8JNnJXfXnQlWSmYbNZrfoZFmWQRghjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYS4jzon7/d7bLdbXC4XTCYT9Ho9eDgej1iv1/l9h8MhkiTxD2C322G1Wt2EMZ/PEccxQjocDlgulzifz/lxmqaIogiDwcB3CKRpenNsBVlhVqBX84XNZlP5mqx6Yrfb/fWZFbZYLPJfR9PsmveaL6sleADj8bj0xjY0mgyhGG5lzVst7gFEUZSP+dAh/HzWXLN7Ww1WSyvTYBzHQUN41Lxp4qHLWmd/hWBTYJmqITxrfjqdNjLjsPYVgHwetoKaCuGV5uvM/UHeBJOGQvBsvvFX4boheDcfZC1QNYQ2mg+2GHo3hLaar70YeqQouKyx68/bat50Qv9L7Nm3+0jo5l32A54Nhzabd9sQeTcEr+Zdd4ReDcGzeZdnwKtreltPzGYz9Pt9z3LgHsC9EIpVXejdpD8TgDmdTt87OaPRqNaS9l8G8FcQ4ghxhDhCHCGOEEeII8QR4ghxhDhCHCGOEEeII8QR4th2AW37BIDR/AbM1QX6AAAAAElFTkSuQmCC" alt="" width="16" height="16"></span>
+    </button>
+    <div class="auth-accordion-body" id="account-body" aria-hidden="true" inert>
     <h2 class="account-title" id="account-title">Create an account</h2>
     <div class="account-fields">
       <div class="account-field">
@@ -1582,9 +1820,15 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
     </div>
     <p class="account-error" id="account-error" role="alert" hidden></p>
     <button class="action-button account-action" id="account-submit" type="submit">Send confirmation code</button>
+      </div>
   </form>
 
   <form class="verification-card account-pane email-card" id="email-card" aria-labelledby="email-title" aria-hidden="true" inert novalidate autocomplete="off">
+    <button class="section-trigger" type="button" id="email-toggle" aria-expanded="false" aria-controls="email-body" disabled>
+      <span class="status-icons"><img class="status-empty" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR4nO2br1MrMRDHc5k3xVADGDCAQYECAwYMDgz8nSgwSBQGFKgqMMVQBIdpTd98bt7N9PF2c8k196Pc+85kenPXXrLfbHaT3W0ynU6npsOwpuOwpuOwpuOwpuOwpuOwpuP4VVdH4/HYvL29ma+vL/P5+Wkmk8lfz/v9vllaWjIrKytmdXU1u154AobDoXl5eTGvr68mTdOg30ICbWdnx2xsbFQ2xiT2RoiZfn5+zhrXMYB27O7umq2trey6lQSMKxBcwv7+fqYVsYhIYhAwGAzM/f19pYLPAuFzIholYDwem7u7u2yd+6LX62UGDiGWl5ezexhGjKJkHF2AAIiYRxuSsgRg1G5ubgqNGwKvra1l63dzc7NwsKPRKGuQ6kMs7zs7OytNQlKGAAaI8C6VR/C9vb3MeJV1aZCL63x4eMi0RAPCn56eZkRXTsCoQPgYgkt4enrKmkYE/aIJoSQkIQQUqT3++vj4OLqrmu0fY6stDUi4vLwM6j/xJaBIeIwRrQ48Pj5mTQLCX1xceGufDelUE/7w8LA24YvIZox4Jl9YXz9P0wbDmq8bLhJYItiLKASkaaqqW51qH9o/Y/bZmNmiLzDzkurj15sUPgdjkA5LbKjYls9FQKrMPjs41n1bgOfBA3wHy6BIC6zroeZuWPNVuboyYCySHfLRAut6KP2Y2W/C6BWBMWlaUIqA4XAorv2DgwPTRuQ7UEkLkCWYgIHi9tbX101boWmB61BltQcfHx//3KsiIhMT+cnzOwjJBREwmUzM+/u7SEDbwZH7O1jKmjew0k1JeEDEtu3QJoljtTcBo9FI/HKZ83bdYIlKdkA7x1jpphSWIkS9KJBOglqozUo3JbbqSlTEgGSogzRAgqRWbUUebPWB/YkEhESWre8XXUHJH0dAP2ANLQoB2gbO+qp7XVmfGCDB4ruErXRTYgtWF0EL2MSFuHEr3dTS0SEpsKYgnWGCCej1eqIWuA4VbYE0Sa6CCxuyp0a92mwLWKIaARpsyKnKN9DYFLQDjyuNbrUH2IGygcamoAVwXSU21vXCsoHGJsDESF5qe3vb+TtbNtDYJpfIWLRJIUtdmoCeI9AYkn+rGmSMpQlB+KIQni16uaYFRFq1lFmdYAyS5fcN39uiLyD80dGR2nmTJLj6J3zvE8C1Ph3hRrRYW1MkuPplvL4VZNa3w5OTEzXQUDcJrv4YY0jSNgktkbm6ulLP22gJSdMqS2QwvlqmB+HPz8+rKZGZjRhfX1+rJORlrTHzhz5VqNgqhA8N3iZly+Rub28LS9dQRVJpZTXCt/y2rPBzF0qiCT6hMpYGjcRKUW6B93LqxLVBdNG2u4zaRyuVTf8UUGiJVAkcSxk0n8wcDRJ5F8sq5JwBqRRHzBOyT2IVSxdVc8YEpOGVYuQqk1jl8swgRFTpDquoQk1i/2EiD0q4ylpDUVX5bSUEzAJ/jVYQp9MyzhowagRlUPOF+suMBowbVh0yuP5+esv/NIWBxHXWlYtM/v95uuOwTQ+gafwGZJLKN7J0gp0AAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="status-check" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==" alt="" width="16" height="16"><img class="status-check-muted" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD10lEQVR4nO1bf0vrMBS9vS3KBFHxx1AUBUH/8ft/F4eI4pg4NtkYOCyWPU54hb2+pk3SJE2pB8a2trQ5J/fm3tyk0Waz2VCPwdRzMPUcTD0HU8/B1HMw9RyJrwdlWUZfX1+0Xq/p+/tb/M8Rx7H47O7u0s7ODu3t7Yn/nRdgtVrRYrGg5XIpSOsAIgwGAzo+Pqb9/X1nbYxsJ0Lo2el0Sh8fH//0chPAKo6Ojujs7Ez8DlKAzAHxMkCE4XBoTYjIhgAgPplMnBLfBshfXFwI92hVgCzL6OXlRfh5G4AAEKKJNUSmAqRpSo+Pj+K7TYD8/f29sQiRiQAIZSDvy+TrgJB5d3cnIofzRGgdGHkAbRmNRiLPcCpAmqb09PQUFPmiCLouyV3z+ToRdK2TVS9EmAuZfA60EZHJqgDz+Vx8ugKEZdX2soqi6P2u4e3tTckVuO4CKNkF0y8C5JGWNxIg7Wjvb6fodVbAVSfbSnHLgCkxJkKoGdi0Aq46qWJCPnB5eSkyvaurK3p4eKDDw0MtKzASYLVaBeH719fXYvq7DUyAdKwAXLQFmAcQ9kD+5OTkv+OoFOmgypVZdsIkr/ZBHnh/f3crQJZlYtITInmQ0Y1McGVZNOCQej9JEjHYycijU3TS3G3IxoEkFAFy8jL/bjoNl1Wlk7KDJg8BgdPTU1Gmgsm9vr4ql8Jdkwe0XCA1CH+I1QhPSFSQtKhWaHyQr+LEZAnF5AQ1ujoRfJGvAtu60c/Pj1atLgTyVgUYj8elx8tECIW8VACTEjPisyxEbYvQFnkZp0TWYBPk6fPNzU3pPUEcg1EbPS/jxGUHdaacZSLIUlU0oi2zlw3GXHaw6XI0UlWdfN2Hz2sJEMdx49VXiIC6XCjktVwA0Ck6VBUjqnJ3X6N91fSZXQqQjwllIiBq+Ap1VcvoiewExgGYjY0GQgT09u3trbgn/qu4hw3kqbnR6vBEczALESikopZolAkOh0Nvu7VcoVhP1BIgjmOhYFehsqmK627SVSuA79f1vpIAIF/lQ6Hi/PxcKZdh1TBiKyz6ANqruoOMVW+KCU6TOYIvoI06CyesemE+mwt5PAB5tFEnjWedB+RlrhBFQJ0BiZbuHCYy2SaHsvnz87P2BmhXqCuyONsoORqNWhfBxOytbZVN/26gaGshFZEJg3MTl4xsbJbOq0C+rAEmj3WI1jdLF60BGyrqNiQ0Qb76ZDM7jWy/MAEhZrMZfX5+WrMIF8SdCVBckc1rAboLrhjcDg4OhJ936pUZlZemsIpUXKvDKI6exndejPGB6Pfl6Z6D225A2/gDADB+Gm+MT/AAAAAASUVORK5CYII=" alt="" width="16" height="16"></span>
+      <span>Email confirmation</span><span class="chevrons"><img class="chevron-open" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABqUlEQVR4nOWZsa6CMBiFjycmuuHm5sioi6w8gW/A8/EGbjoyOnX0Ddh0Y8P8JjfxGvWSCPxczpeQtKVpe07+kv5lUtd1DWEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcQhxCHEIcaZeE18uF5xOp3t5u91isVi4rGPi8V+gLEvkeY6qqu71+XyOLMuwXC7HvwXKJ/GGla3N3o06AkII2O/3H/vsdjus1+vxRUBoIN6wPtZ3VAaEhuI9TODQxPdtAj3F2363x9OEqaf4x4/du74/7V19GDkE8Vb2igR6i/c2gUMQ72kChyLeywQOSbyHCfx2ADu/tym+qQnH47GV3IFtJDZdnes/mdBWAsVv8vnnrK6LpKaJCbaW3g0oiuKleMvt287o/jLB1tL7SbB6I76riw0zwcZ9FXXvorDTCEiS5Fe9j1sdG9vmsLkeiePY50IkhIDz+YzZbIY0TRFFEfrger3icDjc591sNlitVv/rTnBIEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDiEOIQ4hDi0HsB3twAgQb9vcYNrjsAAAAASUVORK5CYII=" alt="" width="16" height="16"><img class="chevron-closed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB2klEQVR4nOXarZLCQBAE4KbrBC64OHDIOCQOicTxbEjegDdAokBG4nDgQOVqUpcruCP8JNnJXfXnQlWSmYbNZrfoZFmWQRghjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYQ4QhwhjhBHiCPEEeIIcYS4jzon7/d7bLdbXC4XTCYT9Ho9eDgej1iv1/l9h8MhkiTxD2C322G1Wt2EMZ/PEccxQjocDlgulzifz/lxmqaIogiDwcB3CKRpenNsBVlhVqBX84XNZlP5mqx6Yrfb/fWZFbZYLPJfR9PsmveaL6sleADj8bj0xjY0mgyhGG5lzVst7gFEUZSP+dAh/HzWXLN7Ww1WSyvTYBzHQUN41Lxp4qHLWmd/hWBTYJmqITxrfjqdNjLjsPYVgHwetoKaCuGV5uvM/UHeBJOGQvBsvvFX4boheDcfZC1QNYQ2mg+2GHo3hLaar70YeqQouKyx68/bat50Qv9L7Nm3+0jo5l32A54Nhzabd9sQeTcEr+Zdd4ReDcGzeZdnwKtreltPzGYz9Pt9z3LgHsC9EIpVXejdpD8TgDmdTt87OaPRqNaS9l8G8FcQ4ghxhDhCHCGOEEeII8QR4ghxhDhCHCGOEEeII8QR4th2AW37BIDR/AbM1QX6AAAAAElFTkSuQmCC" alt="" width="16" height="16"></span>
+    </button>
+    <div class="auth-accordion-body" id="email-body" aria-hidden="true" inert>
     <h2 class="account-title" id="email-title">Confirm an email</h2>
     <p class="email-description">We have sent a confirmation code to <span id="confirmation-email">kelechi.adunaro@example.com</span></p>
     <fieldset class="email-code-field">
@@ -1603,8 +1847,11 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
       <button class="action-button account-action" id="email-confirm" type="submit">Confirm</button>
       <button class="action-button account-action account-secondary" id="email-resend" type="button">Resend</button>
     </div>
+      </div>
   </form>
 </section>
+
+        </div>
 
 
       </div>
@@ -1722,10 +1969,10 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
     definitions.appendChild(defs);
     document.body.appendChild(definitions);
     var elements = new Map();
-    var selectors = '#flow-progress,.account-flow,.citizenship-card,.verification-card,.intro-benefit-card,#intro-start,.action-button,.citizenship-actions button,.control-wrap';
+    var selectors = '#flow-progress,.citizenship-card,.verification-card,.intro-benefit-card,#intro-start,.action-button,.citizenship-actions button,.control-wrap';
     root.querySelectorAll(selectors).forEach(function (element, index) {
       var field = element.classList.contains('control-wrap');
-      var radius = element.matches('#flow-progress,.account-flow,.citizenship-card,.verification-card,.intro-benefit-card') ? 24 : 14;
+      var radius = element.matches('#flow-progress,.citizenship-card,.verification-card,.intro-benefit-card') ? 24 : 14;
       var clip = svg('clipPath'), clipShape = svg('path');
       var id = 'slas-continuous-corner-' + index;
       clip.id = id;
