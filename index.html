@@ -468,6 +468,13 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 [data-state=account] .account-card,[data-state=email] .email-card,[data-state=email-confirmed] .email-card{transition:opacity 240ms ease 60ms,visibility 0s;transform:none}
 .account-secondary.continuous-corners .continuous-stroke{stroke:#e5e5e6}
 .account-secondary.continuous-corners .continuous-focus{stroke:#027b22}
+
+/* One stable white surface for account/email; text changes sequentially in JS. */
+#prototype .account-flow{display:block;height:0;background:transparent;border-radius:24px;overflow:clip;transition:height 420ms cubic-bezier(.32,0,.2,1)}
+#prototype[data-account-visible=true] .account-flow{background:#fff}
+#prototype .account-flow .account-pane{position:absolute;left:0;right:0;top:0;grid-area:auto;background:transparent;transform:none;transition:none}
+#prototype[data-route-transition] .section-stack,#prototype[data-route-transition] .account-flow{pointer-events:none}
+@media(prefers-reduced-motion:reduce){#prototype .account-flow{transition:none}}
 </style>
   
   <script>/* Local interaction demo. No account creation, verification API or network calls. */
@@ -909,8 +916,16 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 
     function completeJamb() {
       if (model.state !== 'jamb-verified' || !model.jambVerified || isBusy()) return;
-      setState('account');
-      announce('Student details verified. Create an account.');
+      transitionTo('account', 'Student details verified. Create an account.');
+    }
+
+    function transitionTo(state, message) {
+      var commit = function () {
+        setState(state);
+        if (message) announce(message);
+      };
+      if (window.slasPageMotion) window.slasPageMotion.transition(state, commit);
+      else commit();
     }
 
     function showError(section, field, message) {
@@ -941,8 +956,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       if (confirmation.value !== password.value) return showError('account', confirmation, 'Passwords must match.');
       // Local demo only: no account is created and no email is sent.
       otpFields.forEach(function (field) { field.value = ''; });
-      setState('email');
-      announce('Email confirmation. This prototype does not send an email.');
+      transitionTo('email', 'Email confirmation. This prototype does not send an email.');
       return true;
     }
 
@@ -1053,11 +1067,9 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 
     function goBack() {
       if (model.state === 'email' || model.state === 'email-confirmed') {
-        setState('account');
-        announce('Returned to account details.');
+        transitionTo('account', 'Returned to account details.');
       } else if (model.state === 'account') {
-        setState('jamb-verified');
-        announce('Returned to verified JAMB details.');
+        transitionTo('jamb-verified', 'Returned to verified JAMB details.');
       } else if (model.state.indexOf('jamb') === 0) {
         setState('verified');
         focusWithoutScroll(byId('education-toggle'));
@@ -1224,6 +1236,120 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     setState(validStates.indexOf(root.dataset.state) === -1 ? 'intro' : root.dataset.state);
   }
 
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
+}());
+</script>
+  <script>/* Sequential screen changes; the progress header and auth surface stay mounted. */
+(function () {
+  function boot() {
+    var root = document.getElementById('prototype');
+    var flow = root && root.querySelector('.account-flow');
+    if (!root || !flow) return;
+    var panes = [document.getElementById('account-card'), document.getElementById('email-card')];
+    var accountStates = ['account', 'email', 'email-confirmed'];
+    var previousState = root.dataset.state;
+    var active = false, committing = false, token = 0, running = [];
+    var originalMinHeight = '', timer, resolveTimer;
+
+    function isAccount(state) { return accountStates.indexOf(state) !== -1; }
+    function pane(state) { return state === 'account' ? panes[0] : panes[1]; }
+    function reduced() { return root.dataset.reducedMotion === 'true'; }
+    function normalizeScroll() { if (window.scrollY > 16) window.scrollTo({ top: 0, behavior: 'auto' }); }
+
+    function setHeight(animate) {
+      var state = root.dataset.state;
+      if (!isAccount(state)) return;
+      var height = Math.ceil(pane(state).getBoundingClientRect().height);
+      if (flow.style.height === height + 'px') return;
+      if (!animate || reduced()) flow.style.transition = 'none';
+      flow.style.height = height + 'px';
+      if (!animate || reduced()) {
+        flow.getBoundingClientRect();
+        flow.style.removeProperty('transition');
+      }
+    }
+
+    function clean() {
+      running.forEach(function (animation) { animation.cancel(); });
+      running = [];
+      clearTimeout(timer);
+      if (resolveTimer) { resolveTimer(); resolveTimer = null; }
+      root.style.minHeight = originalMinHeight;
+      delete root.dataset.routeTransition;
+      root.setAttribute('aria-busy', String(root.dataset.state.indexOf('verifying') !== -1 || root.dataset.state === 'verified-black' || root.dataset.settling === 'true'));
+      active = false;
+    }
+
+    root.addEventListener('slas:statechange', function () {
+      if (active && !committing) { token += 1; clean(); }
+      setHeight(isAccount(previousState));
+      previousState = root.dataset.state;
+    });
+    if (window.ResizeObserver) {
+      var observer = new ResizeObserver(function () { setHeight(true); });
+      panes.forEach(function (element) { if (element) observer.observe(element); });
+    }
+    setHeight(false);
+
+    // Ignore a second tap while the visual handoff is still in progress.
+    ['pointerdown', 'click', 'submit', 'keydown'].forEach(function (type) {
+      root.addEventListener(type, function (event) {
+        if (!active) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }, true);
+    });
+
+    function animate(element, frames, options) {
+      var animation = element.animate(frames, options);
+      running.push(animation);
+      return animation.finished.catch(function () {});
+    }
+
+    async function transition(nextState, commit) {
+      if (active) return false;
+      var current = root.dataset.state;
+      var fromAccount = isAccount(current), toAccount = isAccount(nextState);
+      var oldElement = fromAccount ? (toAccount ? pane(current) : flow) : root.querySelector('.section-stack');
+      var focused = document.activeElement;
+      if (focused && oldElement.contains(focused) && focused.matches('input,select,textarea')) focused.blur();
+      if (reduced() || !oldElement.animate) { commit(); setHeight(false); normalizeScroll(); return true; }
+
+      active = true;
+      var id = ++token;
+      originalMinHeight = root.style.minHeight;
+      root.style.minHeight = root.getBoundingClientRect().height + 'px';
+      root.dataset.routeTransition = 'out';
+      root.setAttribute('aria-busy', 'true');
+      try {
+        await animate(oldElement, [{ opacity: 1 }, { opacity: 0 }], {
+          duration: 160, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards'
+        });
+        if (id !== token) return false;
+        committing = true;
+        commit();
+        committing = false;
+        // Normalize only when needed and while both contents are invisible.
+        normalizeScroll();
+        var incoming = toAccount ? (fromAccount ? pane(nextState) : flow) : root.querySelector('.section-stack');
+        root.dataset.routeTransition = 'in';
+        root.setAttribute('aria-busy', 'true');
+        var entrance = animate(incoming, [{ opacity: 0 }, { opacity: 1 }], {
+          duration: 280, delay: 60, easing: 'cubic-bezier(.2,0,.2,1)', fill: 'both'
+        });
+        await Promise.all([entrance, new Promise(function (resolve) { resolveTimer = resolve; timer = setTimeout(resolve, 420); })]);
+        if (id !== token) return false;
+        clean();
+        return true;
+      } catch (error) {
+        committing = false;
+        if (id === token) clean();
+        throw error;
+      }
+    }
+    window.slasPageMotion = Object.freeze({ transition: transition });
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();
 }());
@@ -1498,7 +1624,7 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
       if(state!==lastState){
         if(active?.matches('input,select')&&!['editing','jamb','account','email'].includes(state))active.blur();
         // Do not compete with the accordion reflow by scrolling at Continue.
-        if(['intro','citizenship','account','email'].includes(state)&&window.scrollY>16)window.scrollTo({top:0,behavior:'smooth'});
+        if(['intro','citizenship'].includes(state)&&window.scrollY>16)window.scrollTo({top:0,behavior:'smooth'});
       }
       lastState=state;
     }
@@ -1596,10 +1722,10 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
     definitions.appendChild(defs);
     document.body.appendChild(definitions);
     var elements = new Map();
-    var selectors = '#flow-progress,.citizenship-card,.verification-card,.intro-benefit-card,#intro-start,.action-button,.citizenship-actions button,.control-wrap';
+    var selectors = '#flow-progress,.account-flow,.citizenship-card,.verification-card,.intro-benefit-card,#intro-start,.action-button,.citizenship-actions button,.control-wrap';
     root.querySelectorAll(selectors).forEach(function (element, index) {
       var field = element.classList.contains('control-wrap');
-      var radius = element.matches('#flow-progress,.citizenship-card,.verification-card,.intro-benefit-card') ? 24 : 14;
+      var radius = element.matches('#flow-progress,.account-flow,.citizenship-card,.verification-card,.intro-benefit-card') ? 24 : 14;
       var clip = svg('clipPath'), clipShape = svg('path');
       var id = 'slas-continuous-corner-' + index;
       clip.id = id;
