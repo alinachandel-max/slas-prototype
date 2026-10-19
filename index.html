@@ -491,6 +491,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
   
   
   
+  
   <script>/* Local interaction demo. No account creation, verification API or network calls. */
 (function () {
   'use strict';
@@ -630,6 +631,84 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       }
     }
 
+    function valueOf(id) {
+      var field = byId(id);
+      return field ? field.value.trim() : '';
+    }
+
+    function validBirthDate(value, today) {
+      var parts = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
+      if (!parts) return false;
+      var day = Number(parts[1]), month = Number(parts[2]), year = Number(parts[3]);
+      if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return false;
+      var date = new Date(0);
+      date.setHours(0, 0, 0, 0);
+      date.setFullYear(year, month - 1, day);
+      var limit = new Date(today.getTime());
+      limit.setHours(0, 0, 0, 0);
+      return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day && date.getTime() < limit.getTime();
+    }
+
+    function validEmailAddress(value) {
+      var parts = value.split('@');
+      if (parts.length !== 2 || !parts[0] || !parts[1]) return false;
+      if (!/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(parts[0]) || /^\.|\.$|\.\./.test(parts[0])) return false;
+      var labels = parts[1].split('.');
+      return labels.length > 1 && labels.every(function (label) {
+        return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label);
+      });
+    }
+
+    // These checks only read values. Button gating and explicit submission use
+    // the same result, independent of native/custom validity or readonly state.
+    function validationError(section) {
+      function error(id, message) { return { field: byId(id), message: message }; }
+      if (section === 'education') {
+        var institution = byId('institution');
+        var selected = valueOf('institution');
+        var known = institution && (!institution.options || Array.from(institution.options).some(function (option) {
+          return !option.disabled && option.value === selected;
+        }));
+        if (!selected || !known) return error('institution', 'Select your institution.');
+        if (!valueOf('matric')) return error('matric', 'Enter the matriculation number issued by your institution.');
+      } else if (section === 'jamb') {
+        if (!validBirthDate(valueOf('dob'), new Date())) return error('dob', 'Enter a valid date of birth in DD/MM/YYYY format. The date must be in the past.');
+        if (!/^[a-z0-9]+$/i.test(valueOf('jamb-number'))) return error('jamb-number', 'Enter your JAMB registration number using letters and numbers only.');
+      } else if (section === 'account') {
+        if (!validEmailAddress(valueOf('account-email'))) return error('account-email', 'Enter a valid email address, such as name@example.com.');
+        var password = byId('account-password');
+        var confirmation = byId('account-password-confirm');
+        if (!password || password.value.length < 8) return error('account-password', 'Use at least 8 characters for your password.');
+        if (!confirmation || confirmation.value !== password.value) return error('account-password-confirm', 'Passwords must match.');
+      } else if (section === 'email') {
+        var incomplete = otpFields.find(function (field) { return !/^[0-9]$/.test(field.value); });
+        if (otpFields.length !== 6 || incomplete) return { field: incomplete || otpFields[0], message: 'Enter the complete 6-digit code.' };
+      }
+      return null;
+    }
+
+    function refreshActionValidity() {
+      if (!model) return;
+      var busy = isBusy();
+      setDisabled(byId('education-action'), busy || !model.educationOpen || model.state !== 'editing' || Boolean(validationError('education')));
+      setDisabled(byId('jamb-action'), busy || !model.jambOpen || !model.educationVerified ||
+        (model.state === 'jamb' ? Boolean(validationError('jamb')) : model.state !== 'jamb-verified'));
+      setDisabled(byId('account-submit'), busy || !model.accountOpen || model.state !== 'account' || Boolean(validationError('account')));
+      setDisabled(byId('email-confirm'), busy || !model.emailOpen || model.state !== 'email' || model.emailConfirmed || Boolean(validationError('email')));
+    }
+
+    function normalizeJambNumber(trim) {
+      var field = byId('jamb-number');
+      if (!field) return;
+      var normalized = (trim ? field.value.trim() : field.value).toUpperCase();
+      if (normalized === field.value) return;
+      var start = field.selectionStart, end = field.selectionEnd;
+      field.value = normalized;
+      if (!trim && document.activeElement === field && typeof field.setSelectionRange === 'function' && start !== null) {
+        field.setSelectionRange(start, end);
+      }
+    }
+
     function progressStep() {
       if (model.state === 'application') return window.slasApplication ? window.slasApplication.progressStep() : 3;
       if (accountStates.indexOf(model.state) !== -1) return 2;
@@ -760,8 +839,6 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 
       var educationAction = byId('education-action');
       var jambAction = byId('jamb-action');
-      setDisabled(educationAction, busy || educationSuccessVisible || !model.educationOpen || model.state !== 'editing');
-      setDisabled(jambAction, busy || !model.jambOpen || !model.educationVerified || !(model.state === 'jamb' || model.state === 'jamb-verified'));
       if (educationAction) {
         educationAction.setAttribute('aria-busy', String(model.state === 'verifying'));
         educationAction.hidden = educationSuccessVisible;
@@ -826,8 +903,6 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       setDisabled(byId('email-toggle'), busy || !emailShown || !model.accountSubmitted);
       accountFields.forEach(function (field) { setFieldEditing(field, model.accountOpen && model.state === 'account'); });
       otpFields.forEach(function (field) { setFieldEditing(field, model.emailOpen && model.state === 'email'); });
-      setDisabled(byId('account-submit'), busy || !model.accountOpen || model.state !== 'account');
-      setDisabled(byId('email-confirm'), busy || !model.emailOpen || model.state !== 'email' || model.emailConfirmed);
       setDisabled(byId('email-resend'), busy || !model.emailOpen || model.state !== 'email' || resendSeconds > 0);
       if (byId('confirmation-email') && byId('account-email')) byId('confirmation-email').textContent = byId('account-email').value.trim();
       if (byId('email-title')) byId('email-title').textContent = model.state === 'email-confirmed' ? 'Email confirmed' : 'Confirm an email';
@@ -842,6 +917,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
         var selected = button.dataset.stage === model.state;
         button.setAttribute('aria-pressed', String(selected));
       });
+      refreshActionValidity();
       root.dispatchEvent(new CustomEvent('slas:statechange', { detail: getState() }));
     }
 
@@ -859,28 +935,10 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function validate(section) {
-      var fields = section === 'education' ? educationFields : jambFields;
       clearErrors(section);
-      var firstInvalid = null;
-      fields.forEach(function (field) {
-        var empty = !field.value.trim();
-        if (empty && typeof field.setCustomValidity === 'function') {
-          field.setCustomValidity(field.tagName === 'SELECT' ? 'Please select an institution.' : 'Please complete this field.');
-        }
-        var invalid = empty || (typeof field.checkValidity === 'function' && !field.checkValidity());
-        field.setAttribute('aria-invalid', String(invalid));
-        if (invalid && !firstInvalid) firstInvalid = field;
-      });
-      if (!firstInvalid) return true;
-      var error = byId(section + '-error');
-      if (error) {
-        error.textContent = 'Complete the required details before continuing.';
-        error.hidden = false;
-      }
-      announce('Complete the required details before continuing.');
-      focusWithoutScroll(firstInvalid);
-      if (typeof firstInvalid.reportValidity === 'function') firstInvalid.reportValidity();
-      return false;
+      var error = validationError(section);
+      refreshActionValidity();
+      return error ? showError(section, error.field, error.message) : true;
     }
 
     function closeBodies() {
@@ -1021,7 +1079,9 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
 
     function verifyJamb() {
-      if (model.state !== 'jamb' || !model.jambOpen || !model.educationVerified || isBusy() || !validate('jamb')) return false;
+      if (model.state !== 'jamb' || !model.jambOpen || !model.educationVerified || isBusy()) return false;
+      normalizeJambNumber(true);
+      if (!validate('jamb')) return false;
       cancelTimers();
       var submitted = signature(jambFields);
       if (!model.jambVerified || jambSignature !== submitted) invalidateAccount();
@@ -1069,7 +1129,6 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     function showError(section, field, message) {
       if (field) {
         field.setAttribute('aria-invalid', 'true');
-        if (typeof field.setCustomValidity === 'function') field.setCustomValidity(message);
       }
       var error = byId(section + '-error');
       if (error) {
@@ -1083,15 +1142,12 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 
     function createAccount() {
       if (model.state !== 'account' || !model.accountOpen || !model.jambVerified || isBusy()) return false;
-      clearErrors('account');
+      if (!validate('account')) return false;
       var email = byId('account-email');
       var password = byId('account-password');
       var confirmation = byId('account-password-confirm');
       if (!email || !password || !confirmation) return false;
       email.value = email.value.trim();
-      if (!email.value || !email.checkValidity()) return showError('account', email, 'Enter a valid email address.');
-      if (password.value.length < 8) return showError('account', password, 'Use at least 8 characters for your password.');
-      if (confirmation.value !== password.value) return showError('account', confirmation, 'Passwords must match.');
       // Local demo only: no account is created and no email is sent.
       var unchanged = model.accountSubmitted && accountSignature === signature(accountFields);
       if (unchanged && model.emailConfirmed) {
@@ -1109,9 +1165,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 
     function confirmEmail() {
       if (model.state !== 'email' || !model.emailOpen || !model.accountSubmitted || isBusy()) return false;
-      clearErrors('email');
-      var invalid = otpFields.find(function (field) { return !/^[0-9]$/.test(field.value); });
-      if (otpFields.length !== 6 || invalid) return showError('email', invalid || otpFields[0], 'Enter the complete 6-digit code.');
+      if (!validate('email')) return false;
       // Any six digits complete the local demonstration; there is no verification API.
       model.emailConfirmed = true;
       model.complete = true;
@@ -1145,6 +1199,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       if (!digits) return false;
       for (var index = 0; index < digits.length; index += 1) otpFields[start + index].value = digits.charAt(index);
       clearErrors('email');
+      refreshActionValidity();
       focusWithoutScroll(otpFields[Math.min(start + digits.length, otpFields.length - 1)]);
       return true;
     }
@@ -1165,6 +1220,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 
     function handleFieldChange(section) {
       cancelAutoAdvance();
+      if (section === 'jamb') normalizeJambNumber(false);
       clearErrors(section);
       if (section === 'education' && educationSignature !== null && signature(educationFields) !== educationSignature) {
         cancelTimers();
@@ -1205,9 +1261,31 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
 
     function replay() {
       reset();
+      fillReviewFixture('editing');
       setState('editing');
       // Keep the editing state visible for one short beat before verification.
       later(verifyEducation, 180);
+    }
+
+    // Only the desktop's explicit preview controls load demonstration values.
+    // Normal navigation and reset always retain the user's values/blank start.
+    function fillReviewFixture(state) {
+      if (state === 'intro' || state === 'citizenship') return;
+      var fixtures = { institution: 'University of Lagos', matric: '2026/01234' };
+      if (state.indexOf('jamb') === 0 || accountStates.indexOf(state) !== -1) {
+        fixtures.dob = '14/03/2005';
+        fixtures['jamb-number'] = '2026123456AB';
+      }
+      if (accountStates.indexOf(state) !== -1) {
+        fixtures['account-email'] = 'kelechi.adunaro@example.com';
+        fixtures['account-password'] = 'Demo2026';
+        fixtures['account-password-confirm'] = 'Demo2026';
+      }
+      Object.keys(fixtures).forEach(function (id) {
+        var field = byId(id);
+        if (field) field.value = fixtures[id];
+      });
+      if (state === 'email-confirmed') otpFields.forEach(function (field, index) { field.value = String(index + 1); });
     }
 
     function reviewCitizenship() {
@@ -1325,6 +1403,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     document.querySelectorAll('[data-stage]').forEach(function (button) {
       button.addEventListener('click', function (event) {
         event.preventDefault();
+        fillReviewFixture(button.dataset.stage);
         setState(button.dataset.stage);
       });
     });
@@ -1354,6 +1433,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
         clearErrors('email');
         if (digits.length > 1) distributeDigits(index, digits);
         else if (digits && index < otpFields.length - 1) focusWithoutScroll(otpFields[index + 1]);
+        refreshActionValidity();
       });
       field.addEventListener('paste', function (event) {
         if (model.state !== 'email') return;
@@ -1366,6 +1446,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
           event.preventDefault();
           otpFields[index - 1].value = '';
           clearErrors('email');
+          refreshActionValidity();
           focusWithoutScroll(otpFields[index - 1]);
         } else if (event.key === 'ArrowLeft' && index > 0) {
           event.preventDefault();
@@ -1475,7 +1556,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     var contactIds = ['phone', 'address', 'residence-state', 'residence-lga'];
     var bankIds = ['bvn', 'bank-name', 'bank-account'];
     var fields = contactIds.concat(bankIds).map(byId).filter(Boolean);
-    var initialValues = fields.map(function (field) { return { field: field, value: field.value }; });
+    var initialValues = fields.map(function (field) { field.value = ''; return { field: field, value: '' }; });
     // Deliberately finite demo locations. Each offered state has matching LGA options.
     var demoLocations = {
       Lagos: ['Surulere', 'Ikeja', 'Eti-Osa', 'Lagos Mainland', 'Alimosho'],
@@ -1594,7 +1675,8 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     }
     function paintRecords() {
       var current = coreState().values || {};
-      var records = { name: current.name || 'Kelechi Adunaro', dob: current.dob || '14/03/2005', email: current.email || 'kelechi.adunaro@example.com', institution: current.institution || 'University of Lagos', matric: current.matric || '2026/01234', jamb: current.jambNumber || '2026123456AB', nin: current.nin || '12345678901' };
+      function entered(input) { return String(input || '').trim() || '—'; }
+      var records = { name: current.name || 'Kelechi Adunaro', dob: entered(current.dob), email: entered(current.email), institution: entered(current.institution), matric: entered(current.matric), jamb: entered(current.jambNumber), nin: current.nin || '12345678901' };
       Object.keys(records).forEach(function (key) { setTextTargets('[data-record="' + key + '"]', records[key]); });
       var review = { phone: value('phone'), address: value('address'), residence: [value('residence-lga'), value('residence-state')].filter(Boolean).join(', '), bank: value('bank-name'), account: value('bank-account'), admission: files.admission ? files.admission.file.name : 'Not uploaded', 'student-id': files['student-id'] ? files['student-id'].file.name : 'Not provided' };
       Object.keys(review).forEach(function (key) { setTextTargets('[data-review="' + key + '"]', review[key]); });
@@ -1641,7 +1723,7 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
           } else button.textContent = label;
         }
         button.setAttribute('aria-label', label);
-        setDisabled(button, model.busy || !model.open || !unlocked('bank'));
+        setDisabled(button, model.busy || model.submitted || coreState().state !== 'application' || model.open !== 'bank' || !unlocked('bank') || !validateBank(false));
         button.setAttribute('aria-busy', String(model.bankPhase === 'verifying'));
       }
       bankIds.forEach(function (id) { var field = byId(id); if (field) field.disabled = model.busy; });
@@ -1682,7 +1764,8 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
       setDisabled(byId('application-submit'), model.busy || model.submitted || !readyToSubmit());
       var submit = byId('application-submit');
       if (submit) { submit.textContent = model.busy && model.active === 'review' ? 'Submitting…' : 'Submit application'; submit.setAttribute('aria-busy', String(model.busy && model.active === 'review')); }
-      ['contact-continue', 'funding-continue'].forEach(function (id) { setDisabled(byId(id), model.busy); });
+      setDisabled(byId('contact-continue'), model.busy || model.submitted || !inApplication || model.open !== 'contact' || !unlocked('contact') || !validateContact(false));
+      setDisabled(byId('funding-continue'), model.busy || model.submitted || !inApplication || model.open !== 'funding' || !unlocked('funding'));
       var success = byId('application-success');
       if (success) { success.hidden = !model.submitted || model.summaryOpen; success.inert = success.hidden; success.setAttribute('aria-hidden', String(success.hidden)); }
       var summary = byId('submitted-summary');
@@ -1812,12 +1895,13 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     function fillStateOptions() {
       var select = byId('residence-state');
       if (!select) return;
-      var selected = select.value || 'Lagos';
+      var selected = select.value;
+      var selectedLga = value('residence-lga');
       select.replaceChildren();
       var prompt = document.createElement('option'); prompt.value = ''; prompt.textContent = 'Select your state'; select.appendChild(prompt);
       Object.keys(demoLocations).forEach(function (state) { var option = document.createElement('option'); option.value = state; option.textContent = state; select.appendChild(option); });
       select.value = Object.prototype.hasOwnProperty.call(demoLocations, selected) ? selected : '';
-      updateLocations(value('residence-lga') || 'Surulere');
+      updateLocations(selectedLga);
     }
     function fileId(kind) { return kind === 'admission' ? 'admission-file' : 'student-id-file'; }
     function releaseFile(kind) {
@@ -2174,6 +2258,49 @@ input,select{transition:background-color 240ms ease,border-color 240ms ease,padd
     render();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true }); else boot();
+}());
+</script>
+  <script>/* One accessible help dialog for field terminology and entry requirements. */
+(function(){
+  function boot(){
+    var root=document.getElementById('prototype'),dialog=document.getElementById('field-help-dialog');
+    if(!root||!dialog)return;
+    var trigger=null;
+    var content={
+      matric:{title:'Matriculation number',paragraphs:['This is the student number issued by your institution. Enter it exactly as it appears on your student record, including any letters, slashes or hyphens.','It is different from your JAMB registration number.']},
+      jamb:{title:'JAMB registration number',paragraphs:['Enter the registration number shown on your JAMB record. Use letters and numbers; letters are converted to uppercase automatically.','Your date of birth must match the date on the same record.']},
+      dob:{title:'Date of birth',paragraphs:['Enter your date of birth as day, month and year: DD/MM/YYYY. For example, 14 March 2005 is entered as 14/03/2005.','Use the date shown on your JAMB record.']},
+      password:{title:'Create a password',paragraphs:['Use at least 8 characters. Enter the same password again in Password confirmation.','The confirmation button becomes available when the email address is valid and both passwords match.']},
+      code:{title:'Confirmation code',paragraphs:['Enter the 6-digit code for the email address you provided. If you need another code, select Resend.'],note:'For this prototype, use 123456. No email is sent.'},
+      bvn:{title:'Bank Verification Number',paragraphs:['Your BVN is an 11-digit number used to identify you for banking verification. Enter the BVN associated with your own bank account.','Your BVN is different from your 10-digit bank account number.']},
+      bankaccount:{title:'Bank account number',paragraphs:['Select your bank, then enter your 10-digit account number. Use an account in your own name.','After verification, check that the returned account name matches your student details.']},
+      upkeep:{title:'Optional Upkeep Loan',paragraphs:['Upkeep provides support for living expenses in addition to your tuition loan. It is optional and increases the total amount you repay.','This example provides ₦20,000 per month for 9 months, for a total of ₦180,000. The 9 months are the payment period, not the repayment term.']},
+      admission:{title:'Admission letter',paragraphs:['Upload the letter confirming your admission to your institution. This document is required to continue.','Choose a readable PDF or JPEG file up to 2 MB. You can view or replace it before submitting.']},
+      studentid:{title:'Student ID card',paragraphs:['You may add your institution-issued student ID card as a supporting document. This upload is optional.','Choose a readable PDF or JPEG file up to 2 MB.']}
+    };
+    function close(){if(dialog.open)dialog.close();}
+    root.addEventListener('click',function(event){
+      var button=event.target.closest('[data-help]');
+      if(!button||!root.contains(button)||button.disabled)return;
+      event.preventDefault();event.stopPropagation();
+      var item=content[button.dataset.help];if(!item)return;
+      trigger=button;
+      document.getElementById('field-help-title').textContent=item.title;
+      var body=document.getElementById('field-help-body');body.replaceChildren();
+      item.paragraphs.forEach(function(text){var p=document.createElement('p');p.textContent=text;body.appendChild(p);});
+      if(item.note){var note=document.createElement('p');note.className='field-help-note';note.textContent=item.note;body.appendChild(note);}
+      if(!dialog.open)dialog.showModal();
+      document.getElementById('field-help-close').focus({preventScroll:true});
+    });
+    document.getElementById('field-help-close').addEventListener('click',close);
+    dialog.addEventListener('click',function(event){
+      if(event.target!==dialog)return;
+      var r=dialog.getBoundingClientRect();
+      if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)close();
+    });
+    dialog.addEventListener('close',function(){if(trigger&&trigger.isConnected)trigger.focus({preventScroll:true});});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 }());
 </script>
   
@@ -2625,6 +2752,25 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
 .history-check-fallback{display:grid;place-items:center;flex:0 0 16px;width:16px;height:16px;border-radius:50%;background:#cacbcc;color:#fff;font-size:11px;line-height:16px}
 #prototype .section-stack [data-history-hidden=true]{height:0!important;min-height:0!important;margin-top:-4px!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;overflow:hidden!important}
 @media(prefers-reduced-motion:reduce){#prototype .completed-history,#prototype .completed-history-list,.completed-history-chevron{transition:none}}
+
+/* Empty fields and inactive actions keep the same dimensions as filled states. */
+#prototype input::placeholder,#prototype textarea::placeholder{color:#999;-webkit-text-fill-color:#999;opacity:1}
+#prototype select:required:invalid{color:#999;-webkit-text-fill-color:#999}
+#prototype select option:not([value=""]){color:#262626}
+#prototype .action-button:disabled:not([aria-busy=true]){background:#f4f4f5;border-color:#e5e5e6;color:#999;cursor:default;filter:none}
+#prototype .action-button:disabled.continuous-corners .continuous-stroke{stroke:#e5e5e6}
+.hint-trigger{display:block;padding:0;border:0;background:transparent;text-align:left;cursor:pointer;font-family:inherit}
+.hint-trigger:focus-visible{outline:2px solid #027b22;outline-offset:3px;border-radius:2px}
+.application-field>label .help-button,.account-field>label .help-button{vertical-align:middle;flex-shrink:0}
+.account-field>label:has(.help-button){display:flex;align-items:center}
+.email-code-field legend .help-button{display:inline-flex;vertical-align:middle}
+.account-password-hint{margin:4px 4px 0;color:#696969;font-size:12px;line-height:18px}
+.upkeep-help{margin:-12px 0 0 32px;display:flex;gap:4px;align-items:center;color:#696969;font-size:12px;line-height:18px}
+#field-help-body{margin-top:24px;font-size:16px;line-height:24px;color:#262626}
+#field-help-body p{margin:0 0 16px}
+#field-help-body p:last-child{margin-bottom:0}
+#field-help-body .field-help-note{font-size:13px;line-height:20px;color:#696969}
+#field-help-close{margin-top:32px}
 </style></head>
 <body>
   <main class="studio">
@@ -2693,6 +2839,7 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
                 <label for="institution">Institution<span class="required">*</span></label>
                 <div class="control-wrap">
                   <select id="institution" required aria-label="Institution">
+                    <option value="" selected>Select your institution</option>
                     <option>University of Lagos</option>
                     <option>University of Abuja</option>
                     <option>University of Ibadan</option>
@@ -2703,12 +2850,12 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
                 </div>
               </div>
               <div class="field matric-field">
-                <label for="matric">Matriculation number<span class="required">*</span><button class="help-button" type="button" aria-label="Use the number issued by your institution" title="Use the number issued by your institution."><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEUklEQVR4nO1bK1PrQBQ+2ckUAxWAoQYUGFBgUCjAgOM/YigGFBhUMYABAwpMayiCYFLTO1+mYbi9u9nX2SQl95vJTCaPzZ5vz57XbqLxeDymBkNQwyGo4RDUcAhqOOKyPpSmKQ0GA/r6+qLPz08ajUZ/3W+1WtRut2lxcZGWlpZobm5u9gno9/v0+vpKb29vlCSJ1bsLCwu0srJC6+vr1Ol0gvUx4naDGOmnp6fswDkHcjK2t7ez81oSkAYQXAZoBCcREQcBj4+P9PDwEFTwn4DwIAFkVEpAmqZ0fX2dzfUqwKENkSsBMGqXl5fWxo0bEP7o6MiZhMiFgOFwmAlflsrrABcKEpaXl8MHQsOaCQ8gpkCf3t/fwxKQTNS+TsJPk2A7JcVvEH6aBJs+CtMH7+/vKzd4JkAf4ZlYQ+GXl5fs4DJYa2trmcHCeT5ycKU4pnMEF6AdxCZbW1v+BCRJko2+LyAsOrS5uSlNdHAdqgui0XkkTT5AnxEn6JKqSOcGb25uvEcfGd7h4aGxrwbpFxcX3iQgSMLhbAOSJPEWfn5+no6Pj60CFTx7cnKSpcU+gCbpDKIouumr+rnwLrk9pszBwcG3nXAB7AmSM2cCBoMB+QBzXjXyGBnUCmCwVN4F75oYMp0WOBnBfkHHTICRU2VrsuxRNV9BAJ539Q65h1EVVYTqRd+5jw/KVB/T6vb29p+5ieuy0QKRvhUhaJoKIpT6o4Jj61JxT2a0ZG3ZACU5KwJGo5F31CcbfV2b+K6MeN8CKb6r8gZCdtElqzLNJHXwsfpFUGm0cO2oDjIbonNJgMxrcCRgKu2LZRd9IzAAlvf09DSz4hhVEKKbAqrylq89siYgZUp58dFer2f0LHIBmRvM3ZgvVG40poqRC64ydM/PzywZogoxVYi9vT3a2Ngo1CATuzGTi6O7u7uFwmMallF1jmUXQy9MIkkqivEh9NXVFavwKvcaqzoYEirhQy6vqZKy2OZhLqiixPPz82BFV1VtQcguhlyOVgG+PmTFWTWoQjVfQmqBzK+HXF/ElLYiAEDlNhQQFeaZHw6kx1xVZ1uNjlRFUYwI3NBvANYNrQsinU4nWGZWJqD+RRogil72rcfpgI6FNri69uOim771ONNSOVxgt9sNEvN7rQu0Jqs53JiuFnNUf2VAUVbnzYSukTyfDx0IcbtdaJlu9I0IgPAmDdUtDtjZ2TEiVZg0Bi3gNFah4wCovukOssh0jxAM1NnZGUu5LCRs1yKFacOYCmi4zrFB3kcbeyJsPoCG60qCi/BOFSGklXUjIRfeZTk98tkoybGJwRcu+w/Ytsomk7W+kJlcEeCZ9vf3vUp4EcdmaRBwd3dXmjbksQlH9BhxbZcvQxt0G61q8cNEMiECkR2XRoQQPBgBPwESoBEuZMCora6uZpWpmfplRgWEvFh1/vj4KPxpClYdGyLK+mkq+v/rbMMhqOEQ1HCIqjtQNf4Anc+oA2bqhsQAAAAASUVORK5CYII=" alt="" width="16" height="16"></button></label>
+                <label for="matric">Matriculation number<span class="required">*</span><button class="help-button" type="button" data-help="matric" aria-label="About matriculation number" aria-haspopup="dialog" aria-controls="field-help-dialog"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEUklEQVR4nO1bK1PrQBQ+2ckUAxWAoQYUGFBgUCjAgOM/YigGFBhUMYABAwpMayiCYFLTO1+mYbi9u9nX2SQl95vJTCaPzZ5vz57XbqLxeDymBkNQwyGo4RDUcAhqOOKyPpSmKQ0GA/r6+qLPz08ajUZ/3W+1WtRut2lxcZGWlpZobm5u9gno9/v0+vpKb29vlCSJ1bsLCwu0srJC6+vr1Ol0gvUx4naDGOmnp6fswDkHcjK2t7ez81oSkAYQXAZoBCcREQcBj4+P9PDwEFTwn4DwIAFkVEpAmqZ0fX2dzfUqwKENkSsBMGqXl5fWxo0bEP7o6MiZhMiFgOFwmAlflsrrABcKEpaXl8MHQsOaCQ8gpkCf3t/fwxKQTNS+TsJPk2A7JcVvEH6aBJs+CtMH7+/vKzd4JkAf4ZlYQ+GXl5fs4DJYa2trmcHCeT5ycKU4pnMEF6AdxCZbW1v+BCRJko2+LyAsOrS5uSlNdHAdqgui0XkkTT5AnxEn6JKqSOcGb25uvEcfGd7h4aGxrwbpFxcX3iQgSMLhbAOSJPEWfn5+no6Pj60CFTx7cnKSpcU+gCbpDKIouumr+rnwLrk9pszBwcG3nXAB7AmSM2cCBoMB+QBzXjXyGBnUCmCwVN4F75oYMp0WOBnBfkHHTICRU2VrsuxRNV9BAJ539Q65h1EVVYTqRd+5jw/KVB/T6vb29p+5ieuy0QKRvhUhaJoKIpT6o4Jj61JxT2a0ZG3ZACU5KwJGo5F31CcbfV2b+K6MeN8CKb6r8gZCdtElqzLNJHXwsfpFUGm0cO2oDjIbonNJgMxrcCRgKu2LZRd9IzAAlvf09DSz4hhVEKKbAqrylq89siYgZUp58dFer2f0LHIBmRvM3ZgvVG40poqRC64ydM/PzywZogoxVYi9vT3a2Ngo1CATuzGTi6O7u7uFwmMallF1jmUXQy9MIkkqivEh9NXVFavwKvcaqzoYEirhQy6vqZKy2OZhLqiixPPz82BFV1VtQcguhlyOVgG+PmTFWTWoQjVfQmqBzK+HXF/ElLYiAEDlNhQQFeaZHw6kx1xVZ1uNjlRFUYwI3NBvANYNrQsinU4nWGZWJqD+RRogil72rcfpgI6FNri69uOim771ONNSOVxgt9sNEvN7rQu0Jqs53JiuFnNUf2VAUVbnzYSukTyfDx0IcbtdaJlu9I0IgPAmDdUtDtjZ2TEiVZg0Bi3gNFah4wCovukOssh0jxAM1NnZGUu5LCRs1yKFacOYCmi4zrFB3kcbeyJsPoCG60qCi/BOFSGklXUjIRfeZTk98tkoybGJwRcu+w/Ytsomk7W+kJlcEeCZ9vf3vUp4EcdmaRBwd3dXmjbksQlH9BhxbZcvQxt0G61q8cNEMiECkR2XRoQQPBgBPwESoBEuZMCora6uZpWpmfplRgWEvFh1/vj4KPxpClYdGyLK+mkq+v/rbMMhqOEQ1HCIqjtQNf4Anc+oA2bqhsQAAAAASUVORK5CYII=" alt="" width="16" height="16"></button></label>
                 <div class="control-wrap">
-                  <input id="matric" value="2026/01234" required autocomplete="off" spellcheck="false" aria-describedby="matric-hint">
+                  <input id="matric" required autocomplete="off" spellcheck="false" aria-describedby="matric-hint" placeholder="Enter matriculation number">
                   <button class="edit-button" data-edit="education" data-focus="matric" aria-label="Edit matriculation number" tabindex="-1"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACcUlEQVR4nOWaQUsbQRiG33wI2ZObU5KLmoOI0GI9W4KFClKp6EGw0EN/Sy+99Ff0ULDQQwVpK0pFaO+L9iD1ovGyGy/ZnjaXpkxgodJNGJPMzDcz7y3LZmefh5lhv5kp9Xq9HjwOwfMQPA/B8xA8D8HzEDwPwfMQPA/B80yBabKsi7idII5v+78bjRnUq1U/BMRJGx8+fkInTe9cX1yYx/raU1Qq0xNrq8StFhDw797v9XtAUSphiFcvX0xMAsEieBHRK8Q9nc5vtwTEEvAqJJQ4DIHo7CcOj78VwgdBWelwIDCA3z/4MhBeAK42HyvrCQQG8EXJ4eu1Kp40V5RJIDCHz6NKAsECeJUSCJbAq5JAsAhehQSCZfCTlkCwEH6SEgiWwstK2D/4bE5ApBheRsJV6wZxu61fQKQJXkZCHGsWEGmG/3e9oChZN9MnIDIEn1eTRanXanoERIbhiwoqUTE2ZmfUC4gYwot2d3e2h/6fXIUXkWmXXIXfer4h1S65Cr+89EDqWeQz/MgCXIEfSYBL8PcW4Br8vQRc/Lp0Dl5agHgJF+GlBIgFhWFfWjbDSwk4/f7DWXgpAVfXLWfh5YZA+v+a2mpzxQn4kT+EgnIAF+BZbI6ahGchwCS8cQGm4Y0K4ABvTAAXeCMCOMFrF8ANXqsAjvDaBHCFH/mo7HXrRhywk77/8OhkIHx/06L0B9H5OcaN2ATJU6/W+jXL2OcEX795CxsjW7ARHI3ocYMWcbwQkM89YwuYG7KxyD2Plh6OPwd00hRfj06QJAmyblfqMLPpsR+UywjDENubz+5MjGwPS5sMwfMQPA+ZfgHT+Qsgx3CF4+FbHAAAAABJRU5ErkJggg==" alt="" width="16" height="16"></button>
                 </div>
-                <p class="field-hint" id="matric-hint">Use the number issued by your institution.</p>
+                <button class="field-hint hint-trigger" id="matric-hint" type="button" data-help="matric" aria-haspopup="dialog" aria-controls="field-help-dialog">Use the number issued by your institution.</button>
               </div>
               <p class="field-error" id="education-error" hidden></p>
               <button class="action-button education-action" id="education-action">
@@ -2729,13 +2876,13 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
               <h3 class="card-title">Student status<span class="status-slot jamb-slot"><span class="wave-dots jamb-wave-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span><span class="verified-word jamb-verified-word"> <span class="verified-letter" aria-hidden="true" style="--letter:0">v</span><span class="verified-letter" aria-hidden="true" style="--letter:1">e</span><span class="verified-letter" aria-hidden="true" style="--letter:2">r</span><span class="verified-letter" aria-hidden="true" style="--letter:3">i</span><span class="verified-letter" aria-hidden="true" style="--letter:4">f</span><span class="verified-letter" aria-hidden="true" style="--letter:5">i</span><span class="verified-letter" aria-hidden="true" style="--letter:6">e</span><span class="verified-letter" aria-hidden="true" style="--letter:7">d</span><span class="sr-only"> verified</span></span></span></h3>
               <div class="jamb-input-fields">
                 <div class="field dob-field">
-                  <label for="dob">Date of birth<span class="required">*</span></label>
-                  <div class="control-wrap"><input id="dob" value="14/03/2005" required inputmode="numeric" pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" placeholder="DD/MM/YYYY" autocomplete="off" aria-label="Date of birth"></div>
+                  <label for="dob">Date of birth<span class="required">*</span><button class="help-button" type="button" data-help="dob" aria-label="About date of birth" aria-haspopup="dialog" aria-controls="field-help-dialog"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEUklEQVR4nO1bK1PrQBQ+2ckUAxWAoQYUGFBgUCjAgOM/YigGFBhUMYABAwpMayiCYFLTO1+mYbi9u9nX2SQl95vJTCaPzZ5vz57XbqLxeDymBkNQwyGo4RDUcAhqOOKyPpSmKQ0GA/r6+qLPz08ajUZ/3W+1WtRut2lxcZGWlpZobm5u9gno9/v0+vpKb29vlCSJ1bsLCwu0srJC6+vr1Ol0gvUx4naDGOmnp6fswDkHcjK2t7ez81oSkAYQXAZoBCcREQcBj4+P9PDwEFTwn4DwIAFkVEpAmqZ0fX2dzfUqwKENkSsBMGqXl5fWxo0bEP7o6MiZhMiFgOFwmAlflsrrABcKEpaXl8MHQsOaCQ8gpkCf3t/fwxKQTNS+TsJPk2A7JcVvEH6aBJs+CtMH7+/vKzd4JkAf4ZlYQ+GXl5fs4DJYa2trmcHCeT5ycKU4pnMEF6AdxCZbW1v+BCRJko2+LyAsOrS5uSlNdHAdqgui0XkkTT5AnxEn6JKqSOcGb25uvEcfGd7h4aGxrwbpFxcX3iQgSMLhbAOSJPEWfn5+no6Pj60CFTx7cnKSpcU+gCbpDKIouumr+rnwLrk9pszBwcG3nXAB7AmSM2cCBoMB+QBzXjXyGBnUCmCwVN4F75oYMp0WOBnBfkHHTICRU2VrsuxRNV9BAJ539Q65h1EVVYTqRd+5jw/KVB/T6vb29p+5ieuy0QKRvhUhaJoKIpT6o4Jj61JxT2a0ZG3ZACU5KwJGo5F31CcbfV2b+K6MeN8CKb6r8gZCdtElqzLNJHXwsfpFUGm0cO2oDjIbonNJgMxrcCRgKu2LZRd9IzAAlvf09DSz4hhVEKKbAqrylq89siYgZUp58dFer2f0LHIBmRvM3ZgvVG40poqRC64ydM/PzywZogoxVYi9vT3a2Ngo1CATuzGTi6O7u7uFwmMallF1jmUXQy9MIkkqivEh9NXVFavwKvcaqzoYEirhQy6vqZKy2OZhLqiixPPz82BFV1VtQcguhlyOVgG+PmTFWTWoQjVfQmqBzK+HXF/ElLYiAEDlNhQQFeaZHw6kx1xVZ1uNjlRFUYwI3NBvANYNrQsinU4nWGZWJqD+RRogil72rcfpgI6FNri69uOim771ONNSOVxgt9sNEvN7rQu0Jqs53JiuFnNUf2VAUVbnzYSukTyfDx0IcbtdaJlu9I0IgPAmDdUtDtjZ2TEiVZg0Bi3gNFah4wCovukOssh0jxAM1NnZGUu5LCRs1yKFacOYCmi4zrFB3kcbeyJsPoCG60qCi/BOFSGklXUjIRfeZTk98tkoybGJwRcu+w/Ytsomk7W+kJlcEeCZ9vf3vUp4EcdmaRBwd3dXmjbksQlH9BhxbZcvQxt0G61q8cNEMiECkR2XRoQQPBgBPwESoBEuZMCora6uZpWpmfplRgWEvFh1/vj4KPxpClYdGyLK+mkq+v/rbMMhqOEQ1HCIqjtQNf4Anc+oA2bqhsQAAAAASUVORK5CYII=" alt="" width="16" height="16"></button></label>
+                  <div class="control-wrap"><input id="dob" required inputmode="numeric" pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" autocomplete="off" aria-label="Date of birth" placeholder="DD/MM/YYYY"></div>
                 </div>
                 <div class="field jamb-number-field">
-                  <label for="jamb-number">JAMB registration number<span class="required">*</span><button class="help-button" type="button" aria-label="Use the number shown on your JAMB record" title="Use the number shown on your JAMB record."><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEUklEQVR4nO1bK1PrQBQ+2ckUAxWAoQYUGFBgUCjAgOM/YigGFBhUMYABAwpMayiCYFLTO1+mYbi9u9nX2SQl95vJTCaPzZ5vz57XbqLxeDymBkNQwyGo4RDUcAhqOOKyPpSmKQ0GA/r6+qLPz08ajUZ/3W+1WtRut2lxcZGWlpZobm5u9gno9/v0+vpKb29vlCSJ1bsLCwu0srJC6+vr1Ol0gvUx4naDGOmnp6fswDkHcjK2t7ez81oSkAYQXAZoBCcREQcBj4+P9PDwEFTwn4DwIAFkVEpAmqZ0fX2dzfUqwKENkSsBMGqXl5fWxo0bEP7o6MiZhMiFgOFwmAlflsrrABcKEpaXl8MHQsOaCQ8gpkCf3t/fwxKQTNS+TsJPk2A7JcVvEH6aBJs+CtMH7+/vKzd4JkAf4ZlYQ+GXl5fs4DJYa2trmcHCeT5ycKU4pnMEF6AdxCZbW1v+BCRJko2+LyAsOrS5uSlNdHAdqgui0XkkTT5AnxEn6JKqSOcGb25uvEcfGd7h4aGxrwbpFxcX3iQgSMLhbAOSJPEWfn5+no6Pj60CFTx7cnKSpcU+gCbpDKIouumr+rnwLrk9pszBwcG3nXAB7AmSM2cCBoMB+QBzXjXyGBnUCmCwVN4F75oYMp0WOBnBfkHHTICRU2VrsuxRNV9BAJ539Q65h1EVVYTqRd+5jw/KVB/T6vb29p+5ieuy0QKRvhUhaJoKIpT6o4Jj61JxT2a0ZG3ZACU5KwJGo5F31CcbfV2b+K6MeN8CKb6r8gZCdtElqzLNJHXwsfpFUGm0cO2oDjIbonNJgMxrcCRgKu2LZRd9IzAAlvf09DSz4hhVEKKbAqrylq89siYgZUp58dFer2f0LHIBmRvM3ZgvVG40poqRC64ydM/PzywZogoxVYi9vT3a2Ngo1CATuzGTi6O7u7uFwmMallF1jmUXQy9MIkkqivEh9NXVFavwKvcaqzoYEirhQy6vqZKy2OZhLqiixPPz82BFV1VtQcguhlyOVgG+PmTFWTWoQjVfQmqBzK+HXF/ElLYiAEDlNhQQFeaZHw6kx1xVZ1uNjlRFUYwI3NBvANYNrQsinU4nWGZWJqD+RRogil72rcfpgI6FNri69uOim771ONNSOVxgt9sNEvN7rQu0Jqs53JiuFnNUf2VAUVbnzYSukTyfDx0IcbtdaJlu9I0IgPAmDdUtDtjZ2TEiVZg0Bi3gNFah4wCovukOssh0jxAM1NnZGUu5LCRs1yKFacOYCmi4zrFB3kcbeyJsPoCG60qCi/BOFSGklXUjIRfeZTk98tkoybGJwRcu+w/Ytsomk7W+kJlcEeCZ9vf3vUp4EcdmaRBwd3dXmjbksQlH9BhxbZcvQxt0G61q8cNEMiECkR2XRoQQPBgBPwESoBEuZMCora6uZpWpmfplRgWEvFh1/vj4KPxpClYdGyLK+mkq+v/rbMMhqOEQ1HCIqjtQNf4Anc+oA2bqhsQAAAAASUVORK5CYII=" alt="" width="16" height="16"></button></label>
-                  <div class="control-wrap"><input id="jamb-number" value="2026123456AB" required autocomplete="off" spellcheck="false" aria-describedby="jamb-hint"></div>
-                  <p class="field-hint" id="jamb-hint">Use the number shown on your JAMB record.</p>
+                  <label for="jamb-number">JAMB registration number<span class="required">*</span><button class="help-button" type="button" data-help="jamb" aria-label="About JAMB registration number" aria-haspopup="dialog" aria-controls="field-help-dialog"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEUklEQVR4nO1bK1PrQBQ+2ckUAxWAoQYUGFBgUCjAgOM/YigGFBhUMYABAwpMayiCYFLTO1+mYbi9u9nX2SQl95vJTCaPzZ5vz57XbqLxeDymBkNQwyGo4RDUcAhqOOKyPpSmKQ0GA/r6+qLPz08ajUZ/3W+1WtRut2lxcZGWlpZobm5u9gno9/v0+vpKb29vlCSJ1bsLCwu0srJC6+vr1Ol0gvUx4naDGOmnp6fswDkHcjK2t7ez81oSkAYQXAZoBCcREQcBj4+P9PDwEFTwn4DwIAFkVEpAmqZ0fX2dzfUqwKENkSsBMGqXl5fWxo0bEP7o6MiZhMiFgOFwmAlflsrrABcKEpaXl8MHQsOaCQ8gpkCf3t/fwxKQTNS+TsJPk2A7JcVvEH6aBJs+CtMH7+/vKzd4JkAf4ZlYQ+GXl5fs4DJYa2trmcHCeT5ycKU4pnMEF6AdxCZbW1v+BCRJko2+LyAsOrS5uSlNdHAdqgui0XkkTT5AnxEn6JKqSOcGb25uvEcfGd7h4aGxrwbpFxcX3iQgSMLhbAOSJPEWfn5+no6Pj60CFTx7cnKSpcU+gCbpDKIouumr+rnwLrk9pszBwcG3nXAB7AmSM2cCBoMB+QBzXjXyGBnUCmCwVN4F75oYMp0WOBnBfkHHTICRU2VrsuxRNV9BAJ539Q65h1EVVYTqRd+5jw/KVB/T6vb29p+5ieuy0QKRvhUhaJoKIpT6o4Jj61JxT2a0ZG3ZACU5KwJGo5F31CcbfV2b+K6MeN8CKb6r8gZCdtElqzLNJHXwsfpFUGm0cO2oDjIbonNJgMxrcCRgKu2LZRd9IzAAlvf09DSz4hhVEKKbAqrylq89siYgZUp58dFer2f0LHIBmRvM3ZgvVG40poqRC64ydM/PzywZogoxVYi9vT3a2Ngo1CATuzGTi6O7u7uFwmMallF1jmUXQy9MIkkqivEh9NXVFavwKvcaqzoYEirhQy6vqZKy2OZhLqiixPPz82BFV1VtQcguhlyOVgG+PmTFWTWoQjVfQmqBzK+HXF/ElLYiAEDlNhQQFeaZHw6kx1xVZ1uNjlRFUYwI3NBvANYNrQsinU4nWGZWJqD+RRogil72rcfpgI6FNri69uOim771ONNSOVxgt9sNEvN7rQu0Jqs53JiuFnNUf2VAUVbnzYSukTyfDx0IcbtdaJlu9I0IgPAmDdUtDtjZ2TEiVZg0Bi3gNFah4wCovukOssh0jxAM1NnZGUu5LCRs1yKFacOYCmi4zrFB3kcbeyJsPoCG60qCi/BOFSGklXUjIRfeZTk98tkoybGJwRcu+w/Ytsomk7W+kJlcEeCZ9vf3vUp4EcdmaRBwd3dXmjbksQlH9BhxbZcvQxt0G61q8cNEMiECkR2XRoQQPBgBPwESoBEuZMCora6uZpWpmfplRgWEvFh1/vj4KPxpClYdGyLK+mkq+v/rbMMhqOEQ1HCIqjtQNf4Anc+oA2bqhsQAAAAASUVORK5CYII=" alt="" width="16" height="16"></button></label>
+                  <div class="control-wrap"><input id="jamb-number" required autocomplete="off" spellcheck="false" aria-describedby="jamb-hint" placeholder="Enter your JAMB number"></div>
+                  <button class="field-hint hint-trigger" id="jamb-hint" type="button" data-help="jamb" aria-haspopup="dialog" aria-controls="field-help-dialog">Use the number shown on your JAMB record.</button>
                 </div>
               </div>
               <div class="jamb-summary" aria-label="Verified student profile">
@@ -2764,19 +2911,19 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
       <div class="account-field">
         <label for="account-email">Email<span class="required">*</span></label>
         <div class="control-wrap">
-          <input id="account-email" name="email" type="email" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false" value="kelechi.adunaro@example.com" required aria-describedby="account-error">
+          <input id="account-email" name="email" type="email" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false" required aria-describedby="account-error" placeholder="Enter your email address">
         </div>
       </div>
       <div class="account-field">
-        <label for="account-password">Password<span class="required">*</span></label>
+        <label for="account-password">Password<span class="required">*</span><button class="help-button" type="button" data-help="password" aria-label="About password requirements" aria-haspopup="dialog" aria-controls="field-help-dialog"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEUklEQVR4nO1bK1PrQBQ+2ckUAxWAoQYUGFBgUCjAgOM/YigGFBhUMYABAwpMayiCYFLTO1+mYbi9u9nX2SQl95vJTCaPzZ5vz57XbqLxeDymBkNQwyGo4RDUcAhqOOKyPpSmKQ0GA/r6+qLPz08ajUZ/3W+1WtRut2lxcZGWlpZobm5u9gno9/v0+vpKb29vlCSJ1bsLCwu0srJC6+vr1Ol0gvUx4naDGOmnp6fswDkHcjK2t7ez81oSkAYQXAZoBCcREQcBj4+P9PDwEFTwn4DwIAFkVEpAmqZ0fX2dzfUqwKENkSsBMGqXl5fWxo0bEP7o6MiZhMiFgOFwmAlflsrrABcKEpaXl8MHQsOaCQ8gpkCf3t/fwxKQTNS+TsJPk2A7JcVvEH6aBJs+CtMH7+/vKzd4JkAf4ZlYQ+GXl5fs4DJYa2trmcHCeT5ycKU4pnMEF6AdxCZbW1v+BCRJko2+LyAsOrS5uSlNdHAdqgui0XkkTT5AnxEn6JKqSOcGb25uvEcfGd7h4aGxrwbpFxcX3iQgSMLhbAOSJPEWfn5+no6Pj60CFTx7cnKSpcU+gCbpDKIouumr+rnwLrk9pszBwcG3nXAB7AmSM2cCBoMB+QBzXjXyGBnUCmCwVN4F75oYMp0WOBnBfkHHTICRU2VrsuxRNV9BAJ539Q65h1EVVYTqRd+5jw/KVB/T6vb29p+5ieuy0QKRvhUhaJoKIpT6o4Jj61JxT2a0ZG3ZACU5KwJGo5F31CcbfV2b+K6MeN8CKb6r8gZCdtElqzLNJHXwsfpFUGm0cO2oDjIbonNJgMxrcCRgKu2LZRd9IzAAlvf09DSz4hhVEKKbAqrylq89siYgZUp58dFer2f0LHIBmRvM3ZgvVG40poqRC64ydM/PzywZogoxVYi9vT3a2Ngo1CATuzGTi6O7u7uFwmMallF1jmUXQy9MIkkqivEh9NXVFavwKvcaqzoYEirhQy6vqZKy2OZhLqiixPPz82BFV1VtQcguhlyOVgG+PmTFWTWoQjVfQmqBzK+HXF/ElLYiAEDlNhQQFeaZHw6kx1xVZ1uNjlRFUYwI3NBvANYNrQsinU4nWGZWJqD+RRogil72rcfpgI6FNri69uOim771ONNSOVxgt9sNEvN7rQu0Jqs53JiuFnNUf2VAUVbnzYSukTyfDx0IcbtdaJlu9I0IgPAmDdUtDtjZ2TEiVZg0Bi3gNFah4wCovukOssh0jxAM1NnZGUu5LCRs1yKFacOYCmi4zrFB3kcbeyJsPoCG60qCi/BOFSGklXUjIRfeZTk98tkoybGJwRcu+w/Ytsomk7W+kJlcEeCZ9vf3vUp4EcdmaRBwd3dXmjbksQlH9BhxbZcvQxt0G61q8cNEMiECkR2XRoQQPBgBPwESoBEuZMCora6uZpWpmfplRgWEvFh1/vj4KPxpClYdGyLK+mkq+v/rbMMhqOEQ1HCIqjtQNf4Anc+oA2bqhsQAAAAASUVORK5CYII=" alt="" width="16" height="16"></button></label>
         <div class="control-wrap">
-          <input id="account-password" name="password" type="password" autocomplete="new-password" value="Demo2026" required aria-describedby="account-error">
+          <input id="account-password" name="password" type="password" autocomplete="new-password" required aria-describedby="account-error" placeholder="At least 8 characters">
         </div>
       </div>
       <div class="account-field">
         <label for="account-password-confirm">Password confirmation<span class="required">*</span></label>
         <div class="control-wrap">
-          <input id="account-password-confirm" name="password-confirm" type="password" autocomplete="new-password" value="Demo2026" required aria-describedby="account-error">
+          <input id="account-password-confirm" name="password-confirm" type="password" autocomplete="new-password" required aria-describedby="account-error" placeholder="Re-enter your password">
         </div>
       </div>
     </div>
@@ -2792,9 +2939,9 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
     </button>
     <div class="auth-accordion-body" id="email-body" aria-hidden="true" inert>
     <h2 class="account-title" id="email-title">Confirm an email</h2>
-    <p class="email-description">We have sent a confirmation code to <span id="confirmation-email">kelechi.adunaro@example.com</span></p>
+    <p class="email-description">We have sent a confirmation code to <span id="confirmation-email"></span></p>
     <fieldset class="email-code-field">
-      <legend>Code<span class="required">*</span></legend>
+      <legend>Code<span class="required">*</span><button class="help-button" type="button" data-help="code" aria-label="About confirmation code" aria-haspopup="dialog" aria-controls="field-help-dialog"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEUklEQVR4nO1bK1PrQBQ+2ckUAxWAoQYUGFBgUCjAgOM/YigGFBhUMYABAwpMayiCYFLTO1+mYbi9u9nX2SQl95vJTCaPzZ5vz57XbqLxeDymBkNQwyGo4RDUcAhqOOKyPpSmKQ0GA/r6+qLPz08ajUZ/3W+1WtRut2lxcZGWlpZobm5u9gno9/v0+vpKb29vlCSJ1bsLCwu0srJC6+vr1Ol0gvUx4naDGOmnp6fswDkHcjK2t7ez81oSkAYQXAZoBCcREQcBj4+P9PDwEFTwn4DwIAFkVEpAmqZ0fX2dzfUqwKENkSsBMGqXl5fWxo0bEP7o6MiZhMiFgOFwmAlflsrrABcKEpaXl8MHQsOaCQ8gpkCf3t/fwxKQTNS+TsJPk2A7JcVvEH6aBJs+CtMH7+/vKzd4JkAf4ZlYQ+GXl5fs4DJYa2trmcHCeT5ycKU4pnMEF6AdxCZbW1v+BCRJko2+LyAsOrS5uSlNdHAdqgui0XkkTT5AnxEn6JKqSOcGb25uvEcfGd7h4aGxrwbpFxcX3iQgSMLhbAOSJPEWfn5+no6Pj60CFTx7cnKSpcU+gCbpDKIouumr+rnwLrk9pszBwcG3nXAB7AmSM2cCBoMB+QBzXjXyGBnUCmCwVN4F75oYMp0WOBnBfkHHTICRU2VrsuxRNV9BAJ539Q65h1EVVYTqRd+5jw/KVB/T6vb29p+5ieuy0QKRvhUhaJoKIpT6o4Jj61JxT2a0ZG3ZACU5KwJGo5F31CcbfV2b+K6MeN8CKb6r8gZCdtElqzLNJHXwsfpFUGm0cO2oDjIbonNJgMxrcCRgKu2LZRd9IzAAlvf09DSz4hhVEKKbAqrylq89siYgZUp58dFer2f0LHIBmRvM3ZgvVG40poqRC64ydM/PzywZogoxVYi9vT3a2Ngo1CATuzGTi6O7u7uFwmMallF1jmUXQy9MIkkqivEh9NXVFavwKvcaqzoYEirhQy6vqZKy2OZhLqiixPPz82BFV1VtQcguhlyOVgG+PmTFWTWoQjVfQmqBzK+HXF/ElLYiAEDlNhQQFeaZHw6kx1xVZ1uNjlRFUYwI3NBvANYNrQsinU4nWGZWJqD+RRogil72rcfpgI6FNri69uOim771ONNSOVxgt9sNEvN7rQu0Jqs53JiuFnNUf2VAUVbnzYSukTyfDx0IcbtdaJlu9I0IgPAmDdUtDtjZ2TEiVZg0Bi3gNFah4wCovukOssh0jxAM1NnZGUu5LCRs1yKFacOYCmi4zrFB3kcbeyJsPoCG60qCi/BOFSGklXUjIRfeZTk98tkoybGJwRcu+w/Ytsomk7W+kJlcEeCZ9vf3vUp4EcdmaRBwd3dXmjbksQlH9BhxbZcvQxt0G61q8cNEMiECkR2XRoQQPBgBPwESoBEuZMCora6uZpWpmfplRgWEvFh1/vj4KPxpClYdGyLK+mkq+v/rbMMhqOEQ1HCIqjtQNf4Anc+oA2bqhsQAAAAASUVORK5CYII=" alt="" width="16" height="16"></button></legend>
       <div class="email-code-inputs">
         <div class="control-wrap"><input class="otp-input" id="email-code" name="otp" type="text" inputmode="numeric" pattern="[0-9]" maxlength="1" autocomplete="one-time-code" aria-label="Code digit 1 of 6" aria-describedby="email-error" required></div>
         <div class="control-wrap"><input class="otp-input" name="otp" type="text" inputmode="numeric" pattern="[0-9]" maxlength="1" autocomplete="off" aria-label="Code digit 2 of 6" aria-describedby="email-error" required></div>
@@ -2844,22 +2991,22 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
     <div class="application-fields">
       <div class="application-field">
         <label for="phone">Phone number<span class="required">*</span></label>
-        <div class="control-wrap"><input id="phone" name="phone" type="tel" inputmode="tel" maxlength="11" autocomplete="tel-national" value="08012345678" aria-describedby="phone-error" required></div>
+        <div class="control-wrap"><input id="phone" name="phone" type="tel" inputmode="tel" maxlength="11" autocomplete="tel-national" aria-describedby="phone-error" required placeholder="11-digit phone number"></div>
         <p class="application-field-error" id="phone-error" role="alert" hidden></p>
       </div>
       <div class="application-field">
         <label for="address">Residential address<span class="required">*</span></label>
-        <div class="control-wrap application-textarea-wrap"><textarea id="address" name="address" rows="2" autocomplete="street-address" aria-describedby="address-error" required>12 Palm Avenue</textarea></div>
+        <div class="control-wrap application-textarea-wrap"><textarea id="address" name="address" rows="2" autocomplete="street-address" aria-describedby="address-error" required placeholder="Enter your residential address"></textarea></div>
         <p class="application-field-error" id="address-error" role="alert" hidden></p>
       </div>
       <div class="application-field">
         <label for="residence-state">State of residence<span class="required">*</span></label>
-        <div class="control-wrap"><select id="residence-state" name="residence-state" aria-describedby="residence-state-error" required><option value="Lagos" selected>Lagos</option></select><img class="select-caret" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABl0lEQVR4nO3aPY7CMBiE4ZfRNqm5Ay0ttNyBksvBPWhDCyV3oIYuq0S7K5AIf44/F7OPhARBQZ5BCbbFqGmaBmPCnDAnzAlzwpwwJ8wJc8KcMCfMCXPCnDAnzAlzwpwwJ8wJc8LcV8rJ+/2euq6758vlkvF4TITj8ch2u+VyuTCbzbpHeAG73Y71ev33+nA4sFqtmM/n5NQWvtlsbsqoqorpdBp7CdQ/3/y1dmD3jucK/2gs2Quoquru8Vwl9IVPpU9PXCwWve8NXcKz8O39J7yAyWTSXfO5S3gWvh1Dys1XH58J3Q0vZwmvhE+96Srp7IwlRIQfbCI0dAlR4QedCQ5VQmT4wafCqSVEh8+yFvi0hBLhsy2G3i2hVPjkxdAjvwPuC3Z9vFT41ij3f4RSprARiytl/fQXLoeS4cM2RN4tISp86I7QqyVEhg/fEntWQnT4InuCfSWUCB/yK9DndDp1+3rn87nb02uX1yWM/v8qa06YE+aEOWFOmBPmhDlhTpgT5oQ5YU6YE+aEOWFOmBPmVHoApX0DtPrXbFcCl4MAAAAASUVORK5CYII=" alt="" width="16" height="16"></div>
+        <div class="control-wrap"><select id="residence-state" name="residence-state" aria-describedby="residence-state-error" required><option value="" selected>Select your state</option></select><img class="select-caret" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABl0lEQVR4nO3aPY7CMBiE4ZfRNqm5Ay0ttNyBksvBPWhDCyV3oIYuq0S7K5AIf44/F7OPhARBQZ5BCbbFqGmaBmPCnDAnzAlzwpwwJ8wJc8KcMCfMCXPCnDAnzAlzwpwwJ8wJc8LcV8rJ+/2euq6758vlkvF4TITj8ch2u+VyuTCbzbpHeAG73Y71ev33+nA4sFqtmM/n5NQWvtlsbsqoqorpdBp7CdQ/3/y1dmD3jucK/2gs2Quoquru8Vwl9IVPpU9PXCwWve8NXcKz8O39J7yAyWTSXfO5S3gWvh1Dys1XH58J3Q0vZwmvhE+96Srp7IwlRIQfbCI0dAlR4QedCQ5VQmT4wafCqSVEh8+yFvi0hBLhsy2G3i2hVPjkxdAjvwPuC3Z9vFT41ij3f4RSprARiytl/fQXLoeS4cM2RN4tISp86I7QqyVEhg/fEntWQnT4InuCfSWUCB/yK9DndDp1+3rn87nb02uX1yWM/v8qa06YE+aEOWFOmBPmhDlhTpgT5oQ5YU6YE+aEOWFOmBPmVHoApX0DtPrXbFcCl4MAAAAASUVORK5CYII=" alt="" width="16" height="16"></div>
         <p class="application-field-error" id="residence-state-error" role="alert" hidden></p>
       </div>
       <div class="application-field">
         <label for="residence-lga">Local government area<span class="required">*</span></label>
-        <div class="control-wrap"><select id="residence-lga" name="residence-lga" aria-describedby="residence-lga-error" required><option value="Surulere" selected>Surulere</option></select><img class="select-caret" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABl0lEQVR4nO3aPY7CMBiE4ZfRNqm5Ay0ttNyBksvBPWhDCyV3oIYuq0S7K5AIf44/F7OPhARBQZ5BCbbFqGmaBmPCnDAnzAlzwpwwJ8wJc8KcMCfMCXPCnDAnzAlzwpwwJ8wJc8LcV8rJ+/2euq6758vlkvF4TITj8ch2u+VyuTCbzbpHeAG73Y71ev33+nA4sFqtmM/n5NQWvtlsbsqoqorpdBp7CdQ/3/y1dmD3jucK/2gs2Quoquru8Vwl9IVPpU9PXCwWve8NXcKz8O39J7yAyWTSXfO5S3gWvh1Dys1XH58J3Q0vZwmvhE+96Srp7IwlRIQfbCI0dAlR4QedCQ5VQmT4wafCqSVEh8+yFvi0hBLhsy2G3i2hVPjkxdAjvwPuC3Z9vFT41ij3f4RSprARiytl/fQXLoeS4cM2RN4tISp86I7QqyVEhg/fEntWQnT4InuCfSWUCB/yK9DndDp1+3rn87nb02uX1yWM/v8qa06YE+aEOWFOmBPmhDlhTpgT5oQ5YU6YE+aEOWFOmBPmVHoApX0DtPrXbFcCl4MAAAAASUVORK5CYII=" alt="" width="16" height="16"></div>
+        <div class="control-wrap"><select id="residence-lga" name="residence-lga" aria-describedby="residence-lga-error" required><option value="" selected>Select your LGA</option></select><img class="select-caret" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABl0lEQVR4nO3aPY7CMBiE4ZfRNqm5Ay0ttNyBksvBPWhDCyV3oIYuq0S7K5AIf44/F7OPhARBQZ5BCbbFqGmaBmPCnDAnzAlzwpwwJ8wJc8KcMCfMCXPCnDAnzAlzwpwwJ8wJc8LcV8rJ+/2euq6758vlkvF4TITj8ch2u+VyuTCbzbpHeAG73Y71ev33+nA4sFqtmM/n5NQWvtlsbsqoqorpdBp7CdQ/3/y1dmD3jucK/2gs2Quoquru8Vwl9IVPpU9PXCwWve8NXcKz8O39J7yAyWTSXfO5S3gWvh1Dys1XH58J3Q0vZwmvhE+96Srp7IwlRIQfbCI0dAlR4QedCQ5VQmT4wafCqSVEh8+yFvi0hBLhsy2G3i2hVPjkxdAjvwPuC3Z9vFT41ij3f4RSprARiytl/fQXLoeS4cM2RN4tISp86I7QqyVEhg/fEntWQnT4InuCfSWUCB/yK9DndDp1+3rn87nb02uX1yWM/v8qa06YE+aEOWFOmBPmhDlhTpgT5oQ5YU6YE+aEOWFOmBPmVHoApX0DtPrXbFcCl4MAAAAASUVORK5CYII=" alt="" width="16" height="16"></div>
         <p class="application-field-error" id="residence-lga-error" role="alert" hidden></p>
       </div>
     </div>
@@ -2884,6 +3031,7 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
         <input id="upkeep-choice" type="checkbox" name="upkeep">
         <span class="application-choice-copy"><span class="application-subtitle">Optional Upkeep Loan</span><span class="funding-monthly">₦20,000 per month</span><span class="application-caption">For 9 months · ₦180,000 total</span></span>
       </label>
+      <button class="hint-trigger upkeep-help" type="button" data-help="upkeep" aria-haspopup="dialog" aria-controls="field-help-dialog">What is an upkeep loan?</button>
       <p class="application-caption funding-explanation">Upkeep covers living expenses and is added to the amount you repay.</p>
       <div class="application-total"><span>Total loan amount</span><strong data-amount="total">₦250,000</strong></div>
     </div>
@@ -2900,18 +3048,18 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
     <h2 class="application-title" id="bank-title">Bank details<span id="bank-status" aria-live="polite"></span></h2>
     <div class="application-fields" id="bank-fields">
       <div class="application-field">
-        <label for="bvn">Bank verification number<span class="required">*</span></label>
-        <div class="control-wrap"><input id="bvn" name="bvn" type="text" inputmode="numeric" maxlength="11" autocomplete="off" value="12345678901" aria-describedby="bvn-error" required></div>
+        <label for="bvn">Bank verification number<span class="required">*</span><button class="help-button" type="button" data-help="bvn" aria-label="About BVN" aria-haspopup="dialog" aria-controls="field-help-dialog"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEUklEQVR4nO1bK1PrQBQ+2ckUAxWAoQYUGFBgUCjAgOM/YigGFBhUMYABAwpMayiCYFLTO1+mYbi9u9nX2SQl95vJTCaPzZ5vz57XbqLxeDymBkNQwyGo4RDUcAhqOOKyPpSmKQ0GA/r6+qLPz08ajUZ/3W+1WtRut2lxcZGWlpZobm5u9gno9/v0+vpKb29vlCSJ1bsLCwu0srJC6+vr1Ol0gvUx4naDGOmnp6fswDkHcjK2t7ez81oSkAYQXAZoBCcREQcBj4+P9PDwEFTwn4DwIAFkVEpAmqZ0fX2dzfUqwKENkSsBMGqXl5fWxo0bEP7o6MiZhMiFgOFwmAlflsrrABcKEpaXl8MHQsOaCQ8gpkCf3t/fwxKQTNS+TsJPk2A7JcVvEH6aBJs+CtMH7+/vKzd4JkAf4ZlYQ+GXl5fs4DJYa2trmcHCeT5ycKU4pnMEF6AdxCZbW1v+BCRJko2+LyAsOrS5uSlNdHAdqgui0XkkTT5AnxEn6JKqSOcGb25uvEcfGd7h4aGxrwbpFxcX3iQgSMLhbAOSJPEWfn5+no6Pj60CFTx7cnKSpcU+gCbpDKIouumr+rnwLrk9pszBwcG3nXAB7AmSM2cCBoMB+QBzXjXyGBnUCmCwVN4F75oYMp0WOBnBfkHHTICRU2VrsuxRNV9BAJ539Q65h1EVVYTqRd+5jw/KVB/T6vb29p+5ieuy0QKRvhUhaJoKIpT6o4Jj61JxT2a0ZG3ZACU5KwJGo5F31CcbfV2b+K6MeN8CKb6r8gZCdtElqzLNJHXwsfpFUGm0cO2oDjIbonNJgMxrcCRgKu2LZRd9IzAAlvf09DSz4hhVEKKbAqrylq89siYgZUp58dFer2f0LHIBmRvM3ZgvVG40poqRC64ydM/PzywZogoxVYi9vT3a2Ngo1CATuzGTi6O7u7uFwmMallF1jmUXQy9MIkkqivEh9NXVFavwKvcaqzoYEirhQy6vqZKy2OZhLqiixPPz82BFV1VtQcguhlyOVgG+PmTFWTWoQjVfQmqBzK+HXF/ElLYiAEDlNhQQFeaZHw6kx1xVZ1uNjlRFUYwI3NBvANYNrQsinU4nWGZWJqD+RRogil72rcfpgI6FNri69uOim771ONNSOVxgt9sNEvN7rQu0Jqs53JiuFnNUf2VAUVbnzYSukTyfDx0IcbtdaJlu9I0IgPAmDdUtDtjZ2TEiVZg0Bi3gNFah4wCovukOssh0jxAM1NnZGUu5LCRs1yKFacOYCmi4zrFB3kcbeyJsPoCG60qCi/BOFSGklXUjIRfeZTk98tkoybGJwRcu+w/Ytsomk7W+kJlcEeCZ9vf3vUp4EcdmaRBwd3dXmjbksQlH9BhxbZcvQxt0G61q8cNEMiECkR2XRoQQPBgBPwESoBEuZMCora6uZpWpmfplRgWEvFh1/vj4KPxpClYdGyLK+mkq+v/rbMMhqOEQ1HCIqjtQNf4Anc+oA2bqhsQAAAAASUVORK5CYII=" alt="" width="16" height="16"></button></label>
+        <div class="control-wrap"><input id="bvn" name="bvn" type="text" inputmode="numeric" maxlength="11" autocomplete="off" aria-describedby="bvn-error" required placeholder="11-digit BVN"></div>
         <p class="application-field-error" id="bvn-error" role="alert" hidden></p>
       </div>
       <div class="application-field">
         <label for="bank-name">Bank<span class="required">*</span></label>
-        <div class="control-wrap"><select id="bank-name" name="bank" aria-describedby="bank-name-error" required><option value="Access Bank" selected>Access Bank</option><option value="First Bank of Nigeria">First Bank of Nigeria</option><option value="Guaranty Trust Bank">Guaranty Trust Bank</option><option value="United Bank for Africa">United Bank for Africa</option><option value="Zenith Bank">Zenith Bank</option></select><img class="select-caret" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABl0lEQVR4nO3aPY7CMBiE4ZfRNqm5Ay0ttNyBksvBPWhDCyV3oIYuq0S7K5AIf44/F7OPhARBQZ5BCbbFqGmaBmPCnDAnzAlzwpwwJ8wJc8KcMCfMCXPCnDAnzAlzwpwwJ8wJc8LcV8rJ+/2euq6758vlkvF4TITj8ch2u+VyuTCbzbpHeAG73Y71ev33+nA4sFqtmM/n5NQWvtlsbsqoqorpdBp7CdQ/3/y1dmD3jucK/2gs2Quoquru8Vwl9IVPpU9PXCwWve8NXcKz8O39J7yAyWTSXfO5S3gWvh1Dys1XH58J3Q0vZwmvhE+96Srp7IwlRIQfbCI0dAlR4QedCQ5VQmT4wafCqSVEh8+yFvi0hBLhsy2G3i2hVPjkxdAjvwPuC3Z9vFT41ij3f4RSprARiytl/fQXLoeS4cM2RN4tISp86I7QqyVEhg/fEntWQnT4InuCfSWUCB/yK9DndDp1+3rn87nb02uX1yWM/v8qa06YE+aEOWFOmBPmhDlhTpgT5oQ5YU6YE+aEOWFOmBPmVHoApX0DtPrXbFcCl4MAAAAASUVORK5CYII=" alt="" width="16" height="16"></div>
+        <div class="control-wrap"><select id="bank-name" name="bank" aria-describedby="bank-name-error" required><option value="" selected>Select your bank</option><option value="Access Bank">Access Bank</option><option value="First Bank of Nigeria">First Bank of Nigeria</option><option value="Guaranty Trust Bank">Guaranty Trust Bank</option><option value="United Bank for Africa">United Bank for Africa</option><option value="Zenith Bank">Zenith Bank</option></select><img class="select-caret" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABl0lEQVR4nO3aPY7CMBiE4ZfRNqm5Ay0ttNyBksvBPWhDCyV3oIYuq0S7K5AIf44/F7OPhARBQZ5BCbbFqGmaBmPCnDAnzAlzwpwwJ8wJc8KcMCfMCXPCnDAnzAlzwpwwJ8wJc8LcV8rJ+/2euq6758vlkvF4TITj8ch2u+VyuTCbzbpHeAG73Y71ev33+nA4sFqtmM/n5NQWvtlsbsqoqorpdBp7CdQ/3/y1dmD3jucK/2gs2Quoquru8Vwl9IVPpU9PXCwWve8NXcKz8O39J7yAyWTSXfO5S3gWvh1Dys1XH58J3Q0vZwmvhE+96Srp7IwlRIQfbCI0dAlR4QedCQ5VQmT4wafCqSVEh8+yFvi0hBLhsy2G3i2hVPjkxdAjvwPuC3Z9vFT41ij3f4RSprARiytl/fQXLoeS4cM2RN4tISp86I7QqyVEhg/fEntWQnT4InuCfSWUCB/yK9DndDp1+3rn87nb02uX1yWM/v8qa06YE+aEOWFOmBPmhDlhTpgT5oQ5YU6YE+aEOWFOmBPmVHoApX0DtPrXbFcCl4MAAAAASUVORK5CYII=" alt="" width="16" height="16"></div>
         <p class="application-field-error" id="bank-name-error" role="alert" hidden></p>
       </div>
       <div class="application-field">
-        <label for="bank-account">Account number<span class="required">*</span></label>
-        <div class="control-wrap"><input id="bank-account" name="bank-account" type="text" inputmode="numeric" maxlength="10" autocomplete="off" value="0123456789" aria-describedby="bank-account-error" required></div>
+        <label for="bank-account">Account number<span class="required">*</span><button class="help-button" type="button" data-help="bankaccount" aria-label="About bank account number" aria-haspopup="dialog" aria-controls="field-help-dialog"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEUklEQVR4nO1bK1PrQBQ+2ckUAxWAoQYUGFBgUCjAgOM/YigGFBhUMYABAwpMayiCYFLTO1+mYbi9u9nX2SQl95vJTCaPzZ5vz57XbqLxeDymBkNQwyGo4RDUcAhqOOKyPpSmKQ0GA/r6+qLPz08ajUZ/3W+1WtRut2lxcZGWlpZobm5u9gno9/v0+vpKb29vlCSJ1bsLCwu0srJC6+vr1Ol0gvUx4naDGOmnp6fswDkHcjK2t7ez81oSkAYQXAZoBCcREQcBj4+P9PDwEFTwn4DwIAFkVEpAmqZ0fX2dzfUqwKENkSsBMGqXl5fWxo0bEP7o6MiZhMiFgOFwmAlflsrrABcKEpaXl8MHQsOaCQ8gpkCf3t/fwxKQTNS+TsJPk2A7JcVvEH6aBJs+CtMH7+/vKzd4JkAf4ZlYQ+GXl5fs4DJYa2trmcHCeT5ycKU4pnMEF6AdxCZbW1v+BCRJko2+LyAsOrS5uSlNdHAdqgui0XkkTT5AnxEn6JKqSOcGb25uvEcfGd7h4aGxrwbpFxcX3iQgSMLhbAOSJPEWfn5+no6Pj60CFTx7cnKSpcU+gCbpDKIouumr+rnwLrk9pszBwcG3nXAB7AmSM2cCBoMB+QBzXjXyGBnUCmCwVN4F75oYMp0WOBnBfkHHTICRU2VrsuxRNV9BAJ539Q65h1EVVYTqRd+5jw/KVB/T6vb29p+5ieuy0QKRvhUhaJoKIpT6o4Jj61JxT2a0ZG3ZACU5KwJGo5F31CcbfV2b+K6MeN8CKb6r8gZCdtElqzLNJHXwsfpFUGm0cO2oDjIbonNJgMxrcCRgKu2LZRd9IzAAlvf09DSz4hhVEKKbAqrylq89siYgZUp58dFer2f0LHIBmRvM3ZgvVG40poqRC64ydM/PzywZogoxVYi9vT3a2Ngo1CATuzGTi6O7u7uFwmMallF1jmUXQy9MIkkqivEh9NXVFavwKvcaqzoYEirhQy6vqZKy2OZhLqiixPPz82BFV1VtQcguhlyOVgG+PmTFWTWoQjVfQmqBzK+HXF/ElLYiAEDlNhQQFeaZHw6kx1xVZ1uNjlRFUYwI3NBvANYNrQsinU4nWGZWJqD+RRogil72rcfpgI6FNri69uOim771ONNSOVxgt9sNEvN7rQu0Jqs53JiuFnNUf2VAUVbnzYSukTyfDx0IcbtdaJlu9I0IgPAmDdUtDtjZ2TEiVZg0Bi3gNFah4wCovukOssh0jxAM1NnZGUu5LCRs1yKFacOYCmi4zrFB3kcbeyJsPoCG60qCi/BOFSGklXUjIRfeZTk98tkoybGJwRcu+w/Ytsomk7W+kJlcEeCZ9vf3vUp4EcdmaRBwd3dXmjbksQlH9BhxbZcvQxt0G61q8cNEMiECkR2XRoQQPBgBPwESoBEuZMCora6uZpWpmfplRgWEvFh1/vj4KPxpClYdGyLK+mkq+v/rbMMhqOEQ1HCIqjtQNf4Anc+oA2bqhsQAAAAASUVORK5CYII=" alt="" width="16" height="16"></button></label>
+        <div class="control-wrap"><input id="bank-account" name="bank-account" type="text" inputmode="numeric" maxlength="10" autocomplete="off" aria-describedby="bank-account-error" required placeholder="10-digit account number"></div>
         <p class="application-field-error" id="bank-account-error" role="alert" hidden></p>
       </div>
     </div>
@@ -2931,14 +3079,14 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
       <div class="application-field application-file-field">
         <label for="admission-file">Admission letter<span class="required">*</span></label>
         <div class="control-wrap application-file-control"><input id="admission-file" name="admission-letter" type="file" accept="application/pdf,image/jpeg" aria-describedby="admission-file-hint admission-file-error" required><span class="application-file-picker-copy" aria-hidden="true"><span>Choose file</span><span id="admission-file-display">No file chosen</span></span></div>
-        <p class="application-caption application-field-hint" id="admission-file-hint">PDF or JPG · Up to 2 MB</p>
+        <button class="application-caption application-field-hint hint-trigger" id="admission-file-hint" type="button" data-help="admission" aria-haspopup="dialog" aria-controls="field-help-dialog">PDF or JPG · Up to 2 MB</button>
         <div class="application-file-info" id="admission-file-info" hidden><span class="application-file-name" data-file-name="admission"></span><div class="application-file-actions"><button class="application-text-button" id="admission-file-view" type="button">View</button><button class="application-text-button" id="admission-file-remove" type="button">Remove</button></div></div>
         <p class="application-field-error" id="admission-file-error" role="alert" hidden></p>
       </div>
       <div class="application-field application-file-field">
         <label for="student-id-file">Student ID <span class="application-optional">(optional)</span></label>
         <div class="control-wrap application-file-control"><input id="student-id-file" name="student-id" type="file" accept="application/pdf,image/jpeg" aria-describedby="student-id-file-hint student-id-file-error"><span class="application-file-picker-copy" aria-hidden="true"><span>Choose file</span><span id="student-id-file-display">No file chosen</span></span></div>
-        <p class="application-caption application-field-hint" id="student-id-file-hint">PDF or JPG · Up to 2 MB</p>
+        <button class="application-caption application-field-hint hint-trigger" id="student-id-file-hint" type="button" data-help="studentid" aria-haspopup="dialog" aria-controls="field-help-dialog">PDF or JPG · Up to 2 MB</button>
         <div class="application-file-info" id="student-id-file-info" hidden><span class="application-file-name" data-file-name="student-id"></span><div class="application-file-actions"><button class="application-text-button" id="student-id-file-view" type="button">View</button><button class="application-text-button" id="student-id-file-remove" type="button">Remove</button></div></div>
         <p class="application-field-error" id="student-id-file-error" role="alert" hidden></p>
       </div>
@@ -3000,6 +3148,12 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
   <button class="action-button application-action" id="policy-dialog-close" type="button">Close</button>
 </dialog>
 
+<dialog class="application-policy-dialog" id="field-help-dialog" aria-labelledby="field-help-title" aria-describedby="field-help-body">
+  <h2 class="application-title" id="field-help-title">About this field</h2>
+  <div id="field-help-body"></div>
+  <button class="action-button application-action" id="field-help-close" type="button">Got it</button>
+</dialog>
+
 <!-- APPLICATION CONTINUATION END -->
 
         </div>
@@ -3043,7 +3197,7 @@ button.continuous-corners:focus-visible .continuous-focus{opacity:1}
       const digits=before.replace(/\D/g,'').slice(0,8);
       const formatted=[digits.slice(0,2),digits.slice(2,4),digits.slice(4)].filter(Boolean).join('/');
       if(before!==formatted){dob.value=formatted;const cursor=n+(n>2?1:0)+(n>4?1:0);dob.setSelectionRange(cursor,cursor)}
-    });
+    },true);
     function revealFocused(){
       const active=document.activeElement;
       if(!active?.matches('input,select,textarea')||!root.contains(active))return;
