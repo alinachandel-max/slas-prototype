@@ -1599,7 +1599,7 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
       body = heading('Confirm your email', 'We have sent a confirmation code to<br><span class="email-value">' + esc(state.email) + '</span>') + '<div class="fields">' + emailCode() + '</div>';
       bottom = footer('Continue',{save:false,after:button('Resend Code','resend','secondary')});
     } else if (screen === 'student') {
-      body = heading('Student Details') + '<div class="fields">' + field('matric','Matriculation number',{placeholder:'Enter your matriculation number',help:'matric',hint:'Use the number issued by your institution.'}) + field('dob','Date of birth',{placeholder:'DD/MM/YYYY',inputmode:'numeric',maxlength:10,autocomplete:'bday'}) + field('jamb','JAMB registration number',{placeholder:'Enter your JAMB number',help:'jamb',hint:'Use the number shown on your JAMB record.'}) + '</div>';
+      body = heading('Student Details') + '<div class="fields">' + field('matric','Matriculation number',{placeholder:'Enter your matriculation number',help:'matric'}) + field('dob','Date of birth',{placeholder:'DD/MM/YYYY',inputmode:'numeric',maxlength:10,autocomplete:'bday'}) + field('jamb','JAMB registration number',{placeholder:'Enter your JAMB number',help:'jamb'}) + '</div>';
       bottom = footer('Verify student details');
     } else if (screen === 'student-verified') {
       body = heading('Student Details <span class="is-verified">Verified</span>') + '<div class="record-list">' + studentRows() + '</div><button type="button" class="text-button edit-link" data-action="edit-student">Edit my details ' + img(assets.edit) + '</button>';
