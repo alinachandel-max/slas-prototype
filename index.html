@@ -436,26 +436,31 @@ a { color: var(--brand); text-decoration: none; }
 .details-link { margin-top: 24px; }
 
 .screen-funding .screen-heading { margin-bottom: 24px; }
-.funding-cards { display: flex; flex-direction: column; gap: 10px; }
+.funding-cards { display: flex; flex-direction: column; gap: 8px; }
 .funding-card {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   position: relative;
-  min-height: 84px;
-  padding: 16px 44px 16px 20px;
+  min-height: 136px;
+  padding: 20px;
   overflow: hidden;
-  border: 1px solid #e5e5e6;
+  border: 0;
   border-radius: 20px;
   color: #292929;
   background: #fff;
+  box-shadow: none;
   cursor: pointer;
 }
-.funding-card.is-selected { border-color: #454545; box-shadow: inset 0 0 0 1px #454545; }
+.funding-card::after { content: ''; position: absolute; inset: 0; z-index: 2; border: 1px solid #e5e5e6; border-radius: inherit; pointer-events: none; }
+.funding-card.is-selected::after { border: 2px solid #292929; }
+.funding-card.has-upkeep { min-height: 184px; }
 .funding-card input[type="radio"] {
   appearance: none;
   -webkit-appearance: none;
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 20px;
+  right: 20px;
   width: 20px;
   height: 20px;
   margin: 0;
@@ -466,15 +471,16 @@ a { color: var(--brand); text-decoration: none; }
 }
 .funding-card input[type="radio"]:checked { border: 6px solid #292929; background: #fff; }
 .funding-card input[type="radio"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
-.loan-label { display: block; font-size: 16px; font-weight: 400; line-height: 22px; }
-.loan-total { display: block; font-size: 20px; font-weight: 700; line-height: 28px; }
+.loan-label { display: block; max-width: calc(100% - 28px); font-size: 16px; font-weight: 400; line-height: 22px; }
+.loan-total { display: block; font-size: 20px; font-weight: 800; line-height: 27px; }
 .loan-monthly { display: block; margin-top: 2px; font-size: 16px; font-weight: 400; line-height: 24px; }
 .loan-period { display: block; margin-top: 2px; color: #858b91; font-size: 12px; font-weight: 400; line-height: 18px; }
-.funding-card .text-button, .funding-card .link { position: relative; z-index: 1; margin-top: 8px; }
-.loan-illustration { position: absolute; right: -22px; bottom: 0; width: 122px; height: auto; max-height: 106px; object-fit: contain; object-position: right bottom; }
-.funding-card:has(.loan-illustration) { min-height: 158px; padding-bottom: 16px; }
-.funding-card:has(.loan-illustration) .loan-period { max-width: 220px; }
-.screen-funding .terms-list { margin-top: auto; padding: 32px 0 0; }
+.funding-card .text-button, .funding-card .link { position: relative; z-index: 1; margin-top: auto; padding-top: 16px; font-size: 14px; font-weight: 400; line-height: 20px; }
+.loan-illustration { position: absolute; right: -29px; bottom: -40px; width: 142px; height: 137px; object-fit: fill; pointer-events: none; filter: grayscale(1); }
+.has-upkeep .loan-illustration { right: 0; bottom: 0; width: 98px; height: 96px; }
+.funding-card.is-selected .loan-illustration { filter: none; }
+.repayment-link { position: relative; display: inline-flex; align-items: center; justify-content: center; align-self: center; max-width: 100%; margin-top: 8px; padding: 0; border: 0; border-radius: 3px; color: #80858a; background: transparent; font-size: 14px; font-weight: 600; line-height: 20px; text-align: center; }
+.repayment-link::before { content: ''; position: absolute; inset: 0 -8px -24px; }
 .terms-list { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; }
 .terms-list > div, .total-row { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; min-width: 0; }
 .terms-list dt, .terms-list dd { margin: 0; font-size: 14px; font-weight: 400; line-height: 20px; }
@@ -603,6 +609,38 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
 .details-sections h3 { margin: 0 0 8px; font-size: 16px; font-weight: 700; line-height: 24px; }
 .details-sections p { margin: 0 0 8px; color: #696969; overflow-wrap: anywhere; }
 .dialog-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 24px; }
+/* These information dialogs keep close/actions visible while the body scrolls. */
+dialog:is([data-kind="repayment"], [data-kind="loan-info"])[open] {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100svh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .dialog-header,
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .dialog-actions { flex: none; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+}
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-info-summary { margin: 0 0 20px; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-info-summary strong { display: block; color: #292929; font-size: 20px; font-weight: 800; line-height: 28px; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-info-summary p { margin: 4px 0 0; color: #696969; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .repayment-explanation { margin-top: 16px; color: #454545; font-size: 14px; line-height: 22px; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .repayment-explanation p { margin: 0 0 12px; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .repayment-explanation p:last-child { margin-bottom: 0; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts { margin: 20px 0 0; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) dl.loan-facts,
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dl { display: grid; gap: 12px; padding: 0; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dl { margin: 0; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts > div,
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dl > div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; min-width: 0; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dt { margin: 0; color: #858b91; font-size: 14px; line-height: 20px; }
+dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min-width: 0; margin: 0; color: #292929; font-size: 14px; line-height: 20px; text-align: right; }
 .toast {
   position: fixed;
   z-index: 20;
@@ -649,7 +687,7 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
   .record-row { gap: 12px; }
   .terms-list > div { gap: 8px; }
   .terms-list dt, .terms-list dd { font-size: 13px; }
-  .loan-illustration { width: 76px; }
+  .has-upkeep .loan-illustration { width: 82px; height: 80px; }
   .loan-monthly { font-size: 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1464,14 +1502,17 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
     toast.textContent = message; toast.hidden = false;
     toastTimer = setTimeout(() => { toast.hidden = true; }, 4200);
   }
-  function openDialog(title, body, actions) {
+  function openDialog(title, body, actions, kind = '') {
     if (busy) { sequence++; busy=false; render(); }
     window.SLASVerificationMotion?.cancel();
-    dialogTrigger = document.activeElement;
+    if (!dialog.open) dialogTrigger = document.activeElement;
+    dialog.dataset.kind = kind;
     document.getElementById('dialog-title').textContent = title;
     document.getElementById('dialog-body').innerHTML = body;
     document.getElementById('dialog-actions').innerHTML = actions || '<button type="button" class="button primary" data-dialog-close>Got it</button>';
     if (!dialog.open) dialog.showModal();
+    dialog.scrollTop = 0;
+    document.getElementById('dialog-body').scrollTop = 0;
   }
   function closeDialog() { if (dialog.open) dialog.close(); }
   dialog.addEventListener('close', () => { if (dialogTrigger && dialogTrigger.isConnected) dialogTrigger.focus({preventScroll:true}); verifyEmailCode(); });
@@ -1483,20 +1524,20 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
     }
   });
   function help(key) {
+    if (key === 'repayment') { repaymentDialog(); return; }
+    if (key === 'tuition' || key === 'upkeep') { loanInfoDialog(key === 'upkeep' ? 'tuition-upkeep' : 'tuition'); return; }
     const content = {
       matric: ['Matriculation number', 'Enter the student number issued by your institution, exactly as shown on your student record. This is different from your JAMB registration number.'],
       jamb: ['JAMB registration number', 'Enter the registration number on your JAMB record. Your date of birth must match that record.'],
       bvn: ['Bank Verification Number', 'Enter the 11-digit BVN associated with your own bank account. It is different from your 10-digit account number.'],
       account: ['Bank account number', 'Choose your bank and enter your 10-digit account number. Check the account name returned after verification.'],
-      upkeep: ['Tuition + upkeep', 'Upkeep is an optional loan for living expenses. It adds ₦180,000 to this application: ₦20,000 per month for 9 months. It increases the amount you repay. The nine months are the payment period, not the repayment term.'],
-      repayment: ['Repayment terms', 'This example has 0% interest. For NYSC participants, repayment starts 2 years after completing the programme. If you are in salaried employment, 10% of your monthly salary goes towards repayment.'],
       policy: ['Student Loan Policy and Declaration', 'Confirm that the information and supporting documents you provide are accurate and belong to you. Your application and eligibility will be reviewed before any loan is approved.'],
       terms: ['Terms and Conditions', 'You are applying for a loan, which must be repaid under the applicable loan terms. Tuition is paid to the institution. Any selected upkeep increases the total loan requested. Review your amount and repayment information before you agree.'],
       gsi: ['Global Standing Instruction (GSI)', 'The GSI mandate concerns recovery of due debt from your accounts. Read and understand the final mandate before agreeing.'],
       demo: ['About this prototype', 'This is a local demonstration. No email, identity check, bank request or application is sent. Use fictional details. Any 6-digit code confirms the demo email. Passwords and codes are never saved.']
     };
     const item = content[key]; if (!item) return;
-    const note = ['policy','terms','gsi','repayment'].includes(key) ? '<p class="field-hint">Prototype summary. Final approved terms are not included in this demonstration.</p>' : '';
+    const note = ['policy','terms','gsi'].includes(key) ? '<p class="field-hint">Prototype summary. Final approved terms are not included in this demonstration.</p>' : '';
     openDialog(item[0], '<p>' + esc(item[1]) + '</p>' + note);
   }
   function helpButton(key, label) { return '<button type="button" class="help-button" data-help="' + key + '" aria-label="About ' + esc(label) + '">' + img(assets.help) + '</button>'; }
@@ -1554,8 +1595,25 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
   function summaryRows(includeUpkeep = true) {
     return row('Name', PROFILE_NAME, 'avatar') + row('Institution', state.institution, 'institution') + row('Academic session', state.session, 'session') + row(includeUpkeep ? 'Tuition Loan' : 'Total requested', money(includeUpkeep ? 250000 : model.amount(state)), 'tuition') + (includeUpkeep ? row('Upkeep Loan', state.funding === 'tuition-upkeep' ? money(180000) : 'Not requested', 'upkeep', state.funding === 'tuition' ? 'is-muted' : '') : '');
   }
-  function repayment(link) {
-    return '<dl class="terms-list"><div class="total-row"><dt>Total requested</dt><dd>' + money(model.amount(state)) + '</dd></div><div><dt>Interest rate</dt><dd>0%</dd></div><div><dt>Repayment starts</dt><dd>2 years after NYSC ' + helpButton('repayment', 'repayment start') + '</dd></div><div><dt>Monthly repayment</dt><dd>10% of your salary ' + helpButton('repayment', 'monthly repayment') + '</dd></div></dl>' + (link ? '<button type="button" class="text-button" data-help="repayment">View repayment terms</button>' : '');
+  function repayment(link, options = {}) {
+    const showHelp = options.help !== false;
+    return '<dl class="terms-list"><div class="total-row"><dt>Total requested</dt><dd>' + money(model.amount(state)) + '</dd></div><div><dt>Interest rate</dt><dd>0%</dd></div><div><dt>Repayment starts</dt><dd>2 years after NYSC' + (showHelp ? ' ' + helpButton('repayment', 'repayment start') : '') + '</dd></div><div><dt>Monthly repayment</dt><dd>10% of your salary' + (showHelp ? ' ' + helpButton('repayment', 'monthly repayment') : '') + '</dd></div></dl>' + (link ? '<button type="button" class="text-button" data-help="repayment">View repayment terms</button>' : '');
+  }
+  function repaymentDialog() {
+    const option = state.funding === 'tuition-upkeep' ? 'Tuition + upkeep' : 'Tuition only';
+    const body = '<div class="loan-info-summary"><strong>' + option + '</strong></div>' + repayment(false,{help:false}) + '<div class="repayment-explanation"><p>For NYSC participants, the two-year waiting period begins after completing the programme. Monthly salary deductions apply if you are in salaried employment.</p><p class="field-hint">Prototype summary. Final approved terms are not included in this demonstration.</p></div>';
+    openDialog('Repayment terms',body,undefined,'repayment');
+  }
+  function loanInfoDialog(option) {
+    const upkeep = option === 'tuition-upkeep';
+    const title = upkeep ? 'Tuition + upkeep' : 'Tuition only';
+    const total = model.amount({...state,funding:option});
+    const body = '<div class="loan-info-summary"><strong>' + money(total) + ' total</strong><p>Tuition is paid directly to your institution.</p></div>' + (upkeep ? '<p>Upkeep is an optional loan for living expenses. It adds to the amount you repay.</p>' : '<p>This option covers tuition fees. Upkeep support is not included.</p>') + '<dl class="loan-facts"><div><dt>Tuition loan</dt><dd>' + money(250000) + '</dd></div>' + (upkeep ? '<div><dt>Upkeep loan</dt><dd>' + money(180000) + '</dd></div><div><dt>Monthly upkeep</dt><dd>' + money(20000) + '</dd></div><div><dt>Payment period</dt><dd>9 months</dd></div>' : '') + '</dl>' + (upkeep ? '<div class="repayment-explanation"><p>The nine months are the upkeep payment period, not the repayment term.</p></div>' : '');
+    openDialog(title,body,undefined,'loan-info');
+  }
+  function fundingCard(option) {
+    const upkeep = option === 'tuition-upkeep';
+    return '<label class="funding-card ' + (upkeep ? 'has-upkeep ' : '') + (state.funding===option?'is-selected':'') + '"><input type="radio" name="funding" data-field="funding" value="' + option + '"' + (state.funding===option?' checked':'') + '><span class="loan-label">' + (upkeep?'Tuition + upkeep':'Tuition only') + '</span><strong class="loan-total">' + money(model.amount({...state,funding:option})) + ' total</strong>' + (upkeep?'<span class="loan-monthly">Upkeep: ₦20,000 per month</span><span class="loan-period">For 9 months · ₦180,000 total</span>':'') + '<button type="button" class="text-button" data-help="' + (upkeep?'upkeep':'tuition') + '">Learn more</button>' + img(upkeep?assets.upkeep:assets.tuition,'loan-illustration') + '</label>';
   }
   function agreement(name, text, link, helpKey, note = '') {
     return '<div class="agreement"><label><input type="checkbox" data-field="' + name + '" name="' + name + '"' + (state[name] ? ' checked' : '') + '><span class="agreement-copy">' + esc(text) + '</span></label>' + (note ? '<p class="field-hint agreement-note">' + esc(note) + '</p>' : '') + '<button type="button" class="text-button agreement-link" data-help="' + helpKey + '">' + esc(link) + '</button></div>';
@@ -1609,9 +1667,8 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
       body = heading('Your contact details') + '<div class="fields">' + field('phone','Phone number',{placeholder:'11-digit phone number',inputmode:'tel',maxlength:11,autocomplete:'tel-national'}) + field('address','Residential address',{placeholder:'Enter your residential address',multiline:true,autocomplete:'street-address'}) + field('state','State of residence',{placeholder:'Select your state',options:Object.keys(model.REGIONS),autocomplete:'address-level1'}) + field('lga','Local government area',{placeholder:'Select your LGA',options:model.REGIONS[state.state]||[],disabled:!state.state,autocomplete:'address-level2'}) + '</div>';
       bottom = footer('Continue');
     } else if (screen === 'funding') {
-      body = heading('Loan Options') + '<div class="funding-cards" role="radiogroup" aria-label="Loan options"><label class="funding-card ' + (state.funding==='tuition'?'is-selected':'') + '"><input type="radio" name="funding" data-field="funding" value="tuition"' + (state.funding==='tuition'?' checked':'') + '><span class="loan-label">Tuition only</span><strong class="loan-total">₦250,000 total</strong></label><label class="funding-card has-upkeep ' + (state.funding==='tuition-upkeep'?'is-selected':'') + '"><input type="radio" name="funding" data-field="funding" value="tuition-upkeep"' + (state.funding==='tuition-upkeep'?' checked':'') + '><span class="loan-label">Tuition + upkeep</span><strong class="loan-total">₦430,000 total</strong><span class="loan-monthly">Upkeep: ₦20,000 per month</span><span class="loan-period">For 9 months · ₦180,000 total</span><button type="button" class="text-button" data-help="upkeep">Learn more</button>' + img(assets.upkeep,'loan-illustration') + '</label></div>';
-      body+=repayment(false);
-      bottom = footer('Continue');
+      body = heading('Choose Loan Options') + '<div class="funding-cards" role="radiogroup" aria-label="Loan options">' + fundingCard('tuition') + fundingCard('tuition-upkeep') + '</div><button type="button" class="repayment-link" data-help="repayment">View repayment terms</button>';
+      bottom = footer('Continue with ' + money(model.amount(state)));
     } else if (screen === 'bank' || screen === 'bank-verified') {
       body = heading('Bank Details' + (screen === 'bank-verified' ? ' <span class="is-verified">Verified</span>' : ''),'We use your bank details to verify your identity and send upkeep payments if you choose this option.');
       if (screen === 'bank') body += '<div class="fields">' + field('bvn','Bank verification number',{placeholder:'11-digit BVN',inputmode:'numeric',maxlength:11,help:'bvn',autocomplete:'off'}) + field('bank','Bank',{placeholder:'Select your bank',options:model.BANKS}) + field('account','Account number',{placeholder:'10-digit account number',inputmode:'numeric',maxlength:10,help:'account',autocomplete:'off'}) + '</div>';
