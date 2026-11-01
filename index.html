@@ -143,6 +143,7 @@ a { color: var(--brand); text-decoration: none; }
 .icon-button img { width: 24px; height: 24px; object-fit: contain; }
 .topbar > .icon-button { margin: -10px; }
 .topbar > .icon-button:last-child { justify-self: end; }
+.topbar:has(.header-progress) > .icon-button { align-self: start; margin-top: -12px; }
 .icon-button:active, .help-button:active { background: #f4f4f5; }
 .topbar-title, .bar-title { margin: 0; text-align: center; font-size: 16px; font-weight: 600; line-height: 24px; }
 .topbar > .close-icon { grid-column: 3; }
@@ -200,6 +201,7 @@ a { color: var(--brand); text-decoration: none; }
 }
 .screen-body > * { flex-shrink: 0; }
 .registration-bar + .screen .screen-body { padding-top: 24px; }
+.topbar:has(.header-progress) + .screen .screen-body { padding-top: 0; }
 .screen-heading { flex: none; margin-bottom: 24px; text-align: center; }
 .screen-heading h1 {
   margin: 0;
