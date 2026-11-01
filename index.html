@@ -659,7 +659,7 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
 }
 .verification-motion[data-verification-phase="wave"] .verification-motion-letter {
   animation: slas-verified-letter-wave 650ms cubic-bezier(.37, 0, .63, 1) both;
-  animation-delay: calc(var(--letter) * 55ms);
+  animation-delay: calc(var(--letter) * var(--verification-letter-stagger, 55ms));
 }
 .verification-motion[data-verification-phase="green"] .verification-motion-letter { color: #027b22; }
 
@@ -973,7 +973,8 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
   const phases = {
     student: { black: 420, wave: 1100 },
     bank: { black: 160, wave: 1030 },
-    email: { black: 160, wave: 1030 }
+    email: { black: 160, wave: 1030 },
+    availability: { black: 420, wave: 1400 }
   };
   const preference = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
   let active = null;
@@ -1044,10 +1045,12 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
     if (!element || element.nodeType !== 1 || !element.isConnected) return false;
     const text = element.textContent;
     if (!text || !text.trim()) return false;
-    const kind = options && (options.kind === 'bank' || options.kind === 'email') ? options.kind : 'student';
+    const kind = options && Object.prototype.hasOwnProperty.call(phases, options.kind) ? options.kind : 'student';
     const timing = phases[kind];
+    const letterStagger = kind === 'availability' ? 28 : 55;
+    const waveDuration = kind === 'availability' ? Math.max(timing.wave, 650 + (Array.from(text).length - 1) * letterStagger) : timing.wave;
     const reduced = Boolean(preference && preference.matches);
-    const durationMs = reduced ? 0 : timing.black + timing.wave;
+    const durationMs = reduced ? 0 : timing.black + waveDuration;
     const record = {
       element: element, text: text, generation: generation,
       onSettled: options && typeof options.onSettled === 'function' ? options.onSettled : null
@@ -1055,6 +1058,7 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
     const ticket = generation;
     element.classList.add('verification-motion');
     element.dataset.verificationKind = kind;
+    element.style.setProperty('--verification-letter-stagger', letterStagger + 'ms');
 
     active = record;
     if (reduced) {
@@ -1087,7 +1091,7 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
         timer = null;
         if (ticket !== generation || active !== record) return;
         complete(record);
-      }, timing.wave);
+      }, waveDuration);
     }, timing.black);
     return { durationMs: durationMs };
   }
@@ -1400,6 +1404,7 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
     sequence++; busy = false; state.screen = screen;
     if (!options.fromHistory) history.pushState({slas:true,screen},'',location.pathname + location.search + '#' + screen);
     render(); window.scrollTo({top:0,behavior:'instant'});
+    if(options.animateAvailability && screen==='account' && !loginMode)window.SLASVerificationMotion?.start(app.querySelector('#screen-title .is-verified'),{kind:'availability'});
     if(options.animateVerification && ['student-verified','bank-verified','email-verified'].includes(screen))window.SLASVerificationMotion?.start(app.querySelector('#screen-title .is-verified'),{kind:screen==='email-verified'?'email':screen==='bank-verified'?'bank':'student',onSettled:screen==='email-verified'?openAfterConfirmation:undefined});
     if(['student-verified','bank-verified','review','submitted'].includes(screen))window.SLASVerificationMotion?.reveal?.(app.querySelector('.screen'),{kind:screen==='student-verified'?'student':screen==='bank-verified'?'bank':screen,freshVerification:!!options.animateVerification});
     if (options.focus !== false) document.getElementById('screen-title')?.focus({preventScroll:true});
@@ -1450,7 +1455,7 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
     if (busy || !canContinue()) return;
     switch (state.screen) {
       case 'citizenship': update({citizen:true}); navigate('availability'); break;
-      case 'availability': runCheck('Checking availability…', () => navigate(state.accountConfirmed ? 'student' : 'account')); break;
+      case 'availability': runCheck('Checking availability…', () => navigate(state.accountConfirmed ? 'student' : 'account',{animateAvailability:true})); break;
       case 'account': runCheck(loginMode?'Logging in…':'Creating account…', () => { password='';confirmation='';code='';navigate('email'); }); break;
       case 'email': runCheck('Confirming email…', () => { update({accountConfirmed:true});code='';navigate('email-verified',{animateVerification:true}); }); break;
       case 'email-verified': navigate(emailNextScreen()); break;
