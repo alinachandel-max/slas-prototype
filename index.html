@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual">
   <meta name="theme-color" content="#ffffff">
   <meta name="robots" content="noindex,nofollow">
   <title>SLAS · Student application</title>
@@ -55,8 +55,8 @@
   --subtle: #f4f4f5;
   --border: #e5e5e6;
   --error: #b42318;
-  --focus: #027b22;
-  --bottom-action-gap: calc(24px + env(safe-area-inset-bottom, 0px));
+  --focus: #038725;
+  --bottom-action-gap: calc(12px + env(safe-area-inset-bottom, 0px));
 }
 
 * { box-sizing: border-box; }
@@ -196,10 +196,18 @@ a { color: var(--brand); text-decoration: none; }
   padding: 16px 16px 24px;
   overscroll-behavior: contain;
   scroll-padding-block: 16px;
+  scroll-padding-bottom: calc(16px + var(--content-occlusion, 0px));
   -webkit-overflow-scrolling: touch;
   animation: screen-enter 360ms cubic-bezier(.32,0,.2,1) both;
 }
 .screen-body > * { flex-shrink: 0; }
+.screen:not(.screen-intro) .screen-body::after {
+  content: '';
+  display: block;
+  flex: 0 0 var(--content-occlusion, 0px);
+  height: var(--content-occlusion, 0px);
+  pointer-events: none;
+}
 .registration-bar + .screen .screen-body { padding-top: 24px; }
 .topbar:has(.header-progress) + .screen .screen-body { padding-top: 0; }
 .screen-heading { flex: none; margin-bottom: 24px; text-align: center; }
@@ -305,8 +313,13 @@ a { color: var(--brand); text-decoration: none; }
 .control textarea, .field > textarea { min-height: 80px; resize: vertical; }
 .control > img { position: absolute; top: 16px; right: 16px; width: 16px; height: 16px; pointer-events: none; }
 .control:has(> img) select { background-image: none; }
-.control input:focus, .control select:focus, .control textarea:focus,
-.field > input:focus, .field > select:focus, .field > textarea:focus { border-color: var(--focus); box-shadow: 0 0 0 1px #027b2226; }
+.control input:focus:not([readonly]), .control select:focus, .control textarea:focus:not([readonly]),
+.field > input:not([type="file"]):focus:not([readonly]), .field > select:focus, .field > textarea:focus:not([readonly]) {
+  border: 2px solid var(--focus);
+  padding: 10px 15px;
+  box-shadow: none;
+}
+.control select:focus, .field > select:focus { padding-right: 43px; }
 .control [aria-invalid="true"], .field > [aria-invalid="true"] { border-color: var(--error); }
 .control input:disabled, .control select:disabled, .control textarea:disabled { color: #858b91; background-color: #fafafa; }
 .field-hint, .field-error { margin: 4px 4px 0; color: #757575; font-size: 12px; font-weight: 400; line-height: 18px; overflow-wrap: anywhere; }
@@ -844,8 +857,9 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
   letter-spacing: 0;
 }
 .otp-cell.is-empty { color: #a3a3a3; }
-.otp-cell.is-active { border-color: #038725; }
+.otp-cell.is-active { border: 2px solid #038725; }
 .otp-control.is-confirmed .otp-cell {
+  border: 1px solid #c3e9cc;
   color: #038725;
   background: rgba(172, 223, 188, .26);
 }
@@ -1300,8 +1314,9 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
 
 </script>
   <script data-source="page-flow/viewport.js">
-/* One visible-viewport shell. The header/footer stay outside its content scroll.
- * Native browser chrome and keyboard remain entirely owned by the browser.
+/* The native keyboard covers the footer at its normal CSS-viewport bottom.
+ * Modern Safari/Chrome own 100dvh; VisualViewport only describes obscured
+ * content. No keyboard classifier, body-height override or footer offset.
  */
 (function () {
   'use strict';
@@ -1309,11 +1324,22 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
   const root = document.documentElement;
   const viewport = window.visualViewport;
   let frame = null;
-  let previousHeight = -1;
-  let previousTop = -1;
+  let needFocusReveal = false;
+  let previousTop = null;
+  let previousBottom = null;
+  let previousOcclusion = -1;
 
-  function scroller() {
-    return document.querySelector('#app .screen-body');
+  root.style.setProperty('--app-viewport-height', window.CSS && window.CSS.supports('height', '100dvh') ? '100dvh' : '100vh');
+  root.style.setProperty('--app-viewport-top', '0px');
+
+  function scroller() { return document.querySelector('#app .screen-body'); }
+
+  function isTextEntry(element) {
+    if (!element || element.disabled || element.readOnly) return false;
+    if (element.getAttribute && element.getAttribute('inputmode') === 'none') return false;
+    const tag = String(element.tagName || '').toLowerCase();
+    if (tag === 'textarea' || element.isContentEditable) return true;
+    return tag === 'input' && ['text', 'search', 'email', 'url', 'tel', 'password', 'number'].includes(String(element.type || 'text').toLowerCase());
   }
 
   function captureScroll() {
@@ -1326,50 +1352,57 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
     if (!body) return;
     const top = typeof position === 'number' ? position : position && position.top;
     const left = typeof position === 'object' && position ? position.left : 0;
-    // Property assignment is immediate and cannot inherit a smooth-scroll rule.
     body.scrollTop = Number.isFinite(top) ? Math.max(0, top) : 0;
     body.scrollLeft = Number.isFinite(left) ? Math.max(0, left) : 0;
   }
 
   function resetScroll() { restoreScroll({ top: 0, left: 0 }); }
 
-  function revealFocusedControl() {
-    const body = scroller();
+  function revealFocusedControl(body, area, visibleTop, visibleBottom) {
     const active = document.activeElement;
-    if (!body || !active || !body.contains(active) || !active.matches('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="button"]):not([type="submit"]), textarea, select, [contenteditable="true"]')) return;
-    if (viewport && Math.abs(viewport.scale - 1) > .01) return;
-    const area = body.getBoundingClientRect();
+    if (!body || !isTextEntry(active) || !body.contains(active)) return;
     const field = active.getBoundingClientRect();
-    if (area.height <= 0 || field.height <= 0) return;
-    const top = area.top + 16;
-    const bottom = area.bottom - 16;
+    const top = Math.max(area.top, visibleTop) + 16;
+    const bottom = Math.min(area.bottom, visibleBottom) - 16;
+    if (area.height <= 0 || field.height <= 0 || bottom <= top) return;
     let movement = 0;
-    if (field.top < top || field.height > bottom - top) movement = field.top - top;
-    else if (field.bottom > bottom) movement = field.bottom - bottom;
+    if (field.top < top) movement = field.top - top;
+    else if (field.bottom > bottom) movement = field.height > bottom - top ? field.top - top : field.bottom - bottom;
     if (Math.abs(movement) > 1) body.scrollTop += movement;
   }
 
   function updateViewport() {
     frame = null;
-    // Pinch zoom must remain native; do not reflow the app to the zoomed crop.
-    const zoomed = viewport && Math.abs(viewport.scale - 1) > .01;
-    if (!zoomed || previousHeight < 0) {
-      const height = Math.max(1, !zoomed && viewport ? viewport.height : window.innerHeight);
-      const top = Math.max(0, !zoomed && viewport ? viewport.offsetTop : 0);
-      if (height !== previousHeight) {
-        root.style.setProperty('--app-viewport-height', height + 'px');
-        previousHeight = height;
-      }
-      if (top !== previousTop) {
-        root.style.setProperty('--app-viewport-top', top + 'px');
-        previousTop = top;
-      }
+    // A zoomed visual crop is not a new application layout. Keep pinch/pan
+    // native and leave the user's scroll/caret alone until scale returns to 1.
+    if (viewport && Math.abs(viewport.scale - 1) > .01) return;
+    const visibleTop = viewport ? Math.max(0, viewport.offsetTop || 0) : 0;
+    const visibleHeight = viewport && viewport.height > 0 ? viewport.height : window.innerHeight;
+    const visibleBottom = visibleTop + visibleHeight;
+    const body = scroller();
+    const area = body && body.getBoundingClientRect();
+    const occlusion = area ? Math.max(0, Math.ceil(area.bottom - visibleBottom)) : 0;
+    if (occlusion !== previousOcclusion) {
+      root.style.setProperty('--content-occlusion', occlusion + 'px');
+      root.dataset.contentOccluded = String(occlusion > 0);
+      previousOcclusion = occlusion;
     }
-    revealFocusedControl();
+    // Occlusion is geometric, not tied to focus. It therefore survives blur or
+    // a readonly OTP until the actual viewport recovers during keyboard close.
+    if ((previousBottom !== null && visibleBottom < previousBottom - 1) || (previousTop !== null && visibleTop > previousTop + 1)) needFocusReveal = true;
+    if (needFocusReveal && area) revealFocusedControl(body, area, visibleTop, visibleBottom);
+    needFocusReveal = false;
+    previousTop = visibleTop;
+    previousBottom = visibleBottom;
   }
 
   function refresh() {
     if (frame === null) frame = window.requestAnimationFrame(updateViewport);
+  }
+
+  function focused() {
+    if (isTextEntry(document.activeElement)) needFocusReveal = true;
+    refresh();
   }
 
   if (viewport) {
@@ -1379,15 +1412,10 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
   window.addEventListener('resize', refresh, { passive: true });
   window.addEventListener('orientationchange', refresh, { passive: true });
   window.addEventListener('pageshow', refresh, { passive: true });
-  document.addEventListener('focusin', refresh);
+  document.addEventListener('focusin', focused);
   document.addEventListener('focusout', refresh);
 
-  window.SLASViewport = Object.freeze({
-    resetScroll: resetScroll,
-    captureScroll: captureScroll,
-    restoreScroll: restoreScroll,
-    refresh: refresh
-  });
+  window.SLASViewport = Object.freeze({ resetScroll, captureScroll, restoreScroll, refresh });
   updateViewport();
 }());
 
