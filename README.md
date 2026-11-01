@@ -4,7 +4,7 @@ https://alinachandel-max.github.io/slas-prototype/
 
 Updated 1 November 2026 from Figma Application, node 172:25169.
 
-The application now uses separate mobile screens: citizenship → institution/session availability → account and email → student verification and confirmation → contact details → loan options → bank verification and confirmation → supporting document → review and agreements → Application submitted / Pending.
+The application now uses separate mobile screens: introduction → citizenship → institution/session availability → account and email → student verification and confirmation → contact details → loan options → bank verification and confirmation → supporting document → review and agreements → Application submitted / Pending.
 
 Use fictional details. This is a frontend demonstration: account, email, identity, bank and submission checks are simulated. Any six digits confirm the email. Tuition is ₦250,000; optional upkeep adds ₦180,000 (₦20,000 × 9 months). These are demonstration amounts and the agreement dialogs contain summaries, not approved legal text.
 
@@ -13,3 +13,5 @@ Save to drafts stores answers only in this browser on this device. Passwords, co
 Admission Letter accepts nonempty PDF/JPEG up to 2 MB. Document policy, loan terms and GSI agreements are required. The portrait and returned identity remain fictional. Native input, browser Back, reduced motion and widths from 320px are supported. Lists of institutions, banks and local government areas are demonstration subsets.
 
 Manrope is included under the SIL Open Font License; see LICENSE-Manrope.txt. The separate /v2/ concept remains available.
+
+Verification results use the original green letter wave and progressive record appearance. Email confirmation remains visible before the next task opens. Bottom action groups have a 24px gap above the device safe area. Motion respects reduced-motion preferences.
