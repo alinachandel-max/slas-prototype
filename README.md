@@ -2,7 +2,7 @@
 
 https://alinachandel-max.github.io/slas-prototype/
 
-Updated 1 November 2026 from Figma Application, node 172:25169.
+Updated 1 November 2026 from Figma Application, section 194:4446; verification states 210:16274 / 210:16472; email flow 194:5051.
 
 The application now uses separate mobile screens: introduction → citizenship → institution/session availability → account and email → student verification and confirmation → contact details → loan options → bank verification and confirmation → supporting document → review and agreements → Application submitted / Pending.
 
@@ -14,4 +14,4 @@ Admission Letter accepts nonempty PDF/JPEG up to 2 MB. Document policy, loan ter
 
 Manrope is included under the SIL Open Font License; see LICENSE-Manrope.txt. The separate /v2/ concept remains available.
 
-Verification results use the original green letter wave and progressive record appearance. Email confirmation remains visible before the next task opens. Bottom action groups have a 24px gap above the device safe area. Motion respects reduced-motion preferences.
+Verification results use the original green letter wave and progressive record appearance. The updated email flow uses six code cells: the sixth digit starts a local check, the cells turn green on the same form, and Continue opens the next task. There is no separate email-success screen or automatic advance. Student and bank checks keep entered fields readonly while the original spinner and dot wave run. Headers and bottom action groups stay pinned while the page content scrolls. Buttons are 48px high with 16px Manrope Semibold text; headings and secondary actions follow the latest Figma typography. Bottom action groups have a 24px gap above the device safe area. System status bars, browser toolbars and keyboards remain native. Motion respects reduced-motion preferences.
