@@ -452,7 +452,7 @@ a { color: var(--brand); text-decoration: none; }
   box-shadow: none;
   cursor: pointer;
 }
-.funding-card::after { content: ''; position: absolute; inset: 0; z-index: 2; border: 1px solid #e5e5e6; border-radius: inherit; pointer-events: none; }
+.funding-card::after { content: ''; position: absolute; inset: 0; z-index: 2; border: 1px solid #e5e5e6; border-radius: inherit; pointer-events: none; transition: border-color 220ms ease, border-width 220ms ease; }
 .funding-card.is-selected::after { border: 2px solid #292929; }
 .funding-card.has-upkeep { min-height: 184px; }
 .funding-card input[type="radio"] {
@@ -468,6 +468,7 @@ a { color: var(--brand); text-decoration: none; }
   border-radius: 50%;
   background: #f4f4f5;
   cursor: pointer;
+  transition: border-color 180ms ease, border-width 180ms ease, background-color 180ms ease;
 }
 .funding-card input[type="radio"]:checked { border: 6px solid #292929; background: #fff; }
 .funding-card input[type="radio"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
@@ -476,9 +477,10 @@ a { color: var(--brand); text-decoration: none; }
 .loan-monthly { display: block; margin-top: 2px; font-size: 16px; font-weight: 400; line-height: 24px; }
 .loan-period { display: block; margin-top: 2px; color: #858b91; font-size: 12px; font-weight: 400; line-height: 18px; }
 .funding-card .text-button, .funding-card .link { position: relative; z-index: 1; margin-top: auto; padding-top: 16px; font-size: 14px; font-weight: 400; line-height: 20px; }
-.loan-illustration { position: absolute; right: -29px; bottom: -40px; width: 142px; height: 137px; object-fit: fill; pointer-events: none; filter: grayscale(1); }
+.loan-illustration { position: absolute; right: -29px; bottom: -40px; width: 142px; height: 137px; object-fit: fill; pointer-events: none; filter: grayscale(1); transition: filter 260ms ease; }
 .has-upkeep .loan-illustration { right: 0; bottom: 0; width: 98px; height: 96px; }
-.funding-card.is-selected .loan-illustration { filter: none; }
+.funding-card.is-selected .loan-illustration { filter: grayscale(0); }
+.screen-funding [data-action="next"] { font-variant-numeric: tabular-nums; }
 .repayment-link { position: relative; display: inline-flex; align-items: center; justify-content: center; align-self: center; max-width: 100%; margin-top: 8px; padding: 0; border: 0; border-radius: 3px; color: #80858a; background: transparent; font-size: 14px; font-weight: 600; line-height: 20px; text-align: center; }
 .repayment-link::before { content: ''; position: absolute; inset: 0 -8px -24px; }
 .terms-list { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; }
@@ -694,6 +696,7 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
   *, *::before, *::after { scroll-behavior: auto !important; }
   .screen-body, .screen.is-leaving > .screen-body { animation: none; }
   .button { transition: none; }
+  .funding-card::after, .funding-card input[type="radio"], .loan-illustration { transition: none; }
   .spinner { animation: none; }
 }
 
@@ -1757,6 +1760,15 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
       progress.querySelectorAll('.progress-track i').forEach((bar,i)=>bar.classList.toggle('is-complete',i<count));
     }
   }
+  function refreshFundingSelection() {
+    app.querySelectorAll('input[name="funding"]').forEach(control => {
+      const selected = control.value === state.funding;
+      control.checked = selected;
+      control.closest('.funding-card').classList.toggle('is-selected',selected);
+    });
+    const next = app.querySelector('[data-action="next"]');
+    if (next) next.textContent = 'Continue with ' + money(model.amount(state));
+  }
   async function runCheck(label, task, valid = canContinue) {
     if (busy) return; busy = true;
     const token = ++sequence, screen = state.screen, next = app.querySelector('[data-action="next"]');
@@ -1852,7 +1864,7 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
     if (name==='state') {
       const lga=document.getElementById('lga');lga.innerHTML='<option value="">Select your LGA</option>'+(model.REGIONS[value]||[]).map(v=>'<option>'+esc(v)+'</option>').join('');lga.disabled=!value;
     }
-    if (name==='funding') {render();app.querySelector('[value="'+value+'"]')?.focus({preventScroll:true});}
+    if (name==='funding') refreshFundingSelection();
     refreshControls();
     if (target.getAttribute('aria-invalid')==='true') showFieldError(name);
     if(name==='code'){syncCodeCells();verifyEmailCode();}
