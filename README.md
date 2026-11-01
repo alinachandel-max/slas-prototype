@@ -2,10 +2,14 @@
 
 https://alinachandel-max.github.io/slas-prototype/
 
-Interactive student loan application: citizenship, institution and JAMB checks, account and email confirmation, contact details, tuition and optional upkeep, bank details, supporting documents, review and submission confirmation.
+Updated 1 November 2026 from Figma Application, node 172:25169.
 
-Completed steps remain accessible in a compact history. Technical checks advance after a brief success state; JAMB details require explicit confirmation. Supports native mobile input, reduced motion and a simple submitted state with confetti.
+The application now uses separate mobile screens: citizenship → institution/session availability → account and email → student verification and confirmation → contact details → loan options → bank verification and confirmation → supporting document → review and agreements → Application submitted / Pending.
 
-This is a frontend demonstration. No account is created, no email is sent, no application is submitted to NELFUND, and no personal details, credentials or files are stored or transmitted. The student portrait is AI-generated; profile data, institutional fee and tracking ID are fictional. Use any six digits for the email-code demo. Upload controls accept local JPEG/PDF examples up to2MB. The location and bank lists are demonstration subsets, and agreement dialogs contain prototype summaries rather than final legal documents.
+Use fictional details. This is a frontend demonstration: account, email, identity, bank and submission checks are simulated. Any six digits confirm the email. Tuition is ₦250,000; optional upkeep adds ₦180,000 (₦20,000 × 9 months). These are demonstration amounts and the agreement dialogs contain summaries, not approved legal text.
 
-Manrope is included under the SIL Open Font License; see LICENSE-Manrope.txt.
+Save to drafts stores answers only in this browser on this device. Passwords, codes, BVN, account numbers and uploaded file contents are not stored. After reloading a draft, bank details and the admission letter must be added again. No data is sent to NELFUND or another service. Submitted receipts are demonstration state for the current tab.
+
+Admission Letter accepts nonempty PDF/JPEG up to 2 MB. Document policy, loan terms and GSI agreements are required. The portrait and returned identity remain fictional. Native input, browser Back, reduced motion and widths from 320px are supported. Lists of institutions, banks and local government areas are demonstration subsets.
+
+Manrope is included under the SIL Open Font License; see LICENSE-Manrope.txt. The separate /v2/ concept remains available.
