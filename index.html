@@ -279,7 +279,7 @@ a { color: var(--brand); text-decoration: none; }
 }
 .help-button img { width: 16px; height: 16px; object-fit: contain; }
 .control { position: relative; min-width: 0; }
-.control input, .control select, .control textarea,
+.control input, .control select, .control textarea, .control .select-trigger,
 .field > input:not([type="file"]), .field > select, .field > textarea {
   display: block;
   width: 100%;
@@ -299,9 +299,9 @@ a { color: var(--brand); text-decoration: none; }
   opacity: 1;
   scroll-margin-block: 24px;
 }
-.control input, .control select, .field > input:not([type="file"]), .field > select { height: 48px; }
+.control input, .control select, .control .select-trigger, .field > input:not([type="file"]), .field > select { height: 48px; }
 .control input::placeholder, .control textarea::placeholder, .field > input::placeholder, .field > textarea::placeholder { color: #a3a3a3; opacity: 1; }
-.control select, .field > select {
+.control select, .field > select, .control .select-trigger {
   padding-right: 44px;
   background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABl0lEQVR4nO3aPY7CMBiE4ZfRNqm5Ay0ttNyBksvBPWhDCyV3oIYuq0S7K5AIf44/F7OPhARBQZ5BCbbFqGmaBmPCnDAnzAlzwpwwJ8wJc8KcMCfMCXPCnDAnzAlzwpwwJ8wJc8LcV8rJ+/2euq6758vlkvF4TITj8ch2u+VyuTCbzbpHeAG73Y71ev33+nA4sFqtmM/n5NQWvtlsbsqoqorpdBp7CdQ/3/y1dmD3jucK/2gs2Quoquru8Vwl9IVPpU9PXCwWve8NXcKz8O39J7yAyWTSXfO5S3gWvh1Dys1XH58J3Q0vZwmvhE+96Srp7IwlRIQfbCI0dAlR4QedCQ5VQmT4wafCqSVEh8+yFvi0hBLhsy2G3i2hVPjkxdAjvwPuC3Z9vFT41ij3f4RSprARiytl/fQXLoeS4cM2RN4tISp86I7QqyVEhg/fEntWQnT4InuCfSWUCB/yK9DndDp1+3rn87nb02uX1yWM/v8qa06YE+aEOWFOmBPmhDlhTpgT5oQ5YU6YE+aEOWFOmBPmVHoApX0DtPrXbFcCl4MAAAAASUVORK5CYII=");
   background-repeat: no-repeat;
@@ -310,6 +310,11 @@ a { color: var(--brand); text-decoration: none; }
 }
 .control select:invalid, .field > select:invalid, select.is-placeholder { color: #a3a3a3; }
 .control select option, .field > select option { color: #292929; }
+.select-trigger { text-align: left; }
+.select-value { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.control .select-trigger.is-placeholder { color: #a3a3a3; }
+.control .select-trigger:disabled { color: #858b91; background-color: #fafafa; }
+.control .select-trigger:focus-visible { border: 2px solid var(--focus); padding: 10px 43px 10px 15px; outline: none; }
 .control textarea, .field > textarea { min-height: 80px; resize: vertical; }
 .control > img { position: absolute; top: 16px; right: 16px; width: 16px; height: 16px; pointer-events: none; }
 .control:has(> img) select { background-image: none; }
@@ -611,6 +616,130 @@ dialog::backdrop { background: rgb(0 0 0 / 36%); }
 .details-sections h3 { margin: 0 0 8px; font-size: 16px; font-weight: 700; line-height: 24px; }
 .details-sections p { margin: 0 0 8px; color: #696969; overflow-wrap: anywhere; }
 .dialog-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 24px; }
+/* Figma 247:52154: selection sheet. Browser/status bars belong to the browser. */
+dialog[data-kind="select"] {
+  inset: 0;
+  width: 100%;
+  max-width: 390px;
+  height: calc(100vh - 4px);
+  height: calc(var(--app-viewport-height, 100dvh) - 4px);
+  max-height: none;
+  margin: auto auto 0;
+  padding: 0 16px var(--bottom-action-gap);
+  border-radius: 24px 24px 0 0;
+  overflow: hidden;
+}
+dialog[data-kind="select"][open] { display: flex; flex-direction: column; }
+dialog[data-kind="select"]::backdrop { background: rgb(0 0 0 / 36%); }
+dialog[data-kind="select"] .dialog-header {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 24px;
+  align-items: center;
+  flex: none;
+  gap: 0;
+  padding: 20px 24px;
+}
+dialog[data-kind="select"] .dialog-header h2 {
+  grid-column: 2;
+  color: #262626;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 25.2px;
+  text-align: center;
+}
+dialog[data-kind="select"] .dialog-header h2:focus { outline: none; }
+dialog[data-kind="select"] .dialog-header .close-icon {
+  grid-column: 3;
+  width: 44px;
+  height: 44px;
+  margin: -10px;
+  background: url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJjbG9zZV9yZWd1bGFyIj4KPHBhdGggaWQ9IlZlY3RvciIgZD0iTTUuMzA1NCA0LjY5NTgyQzUuMDYzMjYgNC43OTExNyA0Ljg2NDQxIDQuOTcxODggNC43NDY0IDUuMjAzODJDNC42NDY0IDUuMzkzODIgNC42MzQ0IDUuNDUxODIgNC42NTA0IDUuNjc5ODJDNC42NjA0IDUuODIyODIgNC42OTk0IDYuMDAyODIgNC43Mzg0IDYuMDc5ODJDNC43Nzc0IDYuMTU2ODIgNi4xMDc0IDcuNTE5ODIgNy42OTQ0IDkuMTA5ODJMMTAuNTc5NCAxMS45OTk4TDcuNjk0NCAxNC44ODk4QzYuMTA3NCAxNi40Nzg4IDQuNzc3NCAxNy44NDE4IDQuNzM5NCAxNy45MTc4QzQuNjkwNTEgMTguMDM5OSA0LjY2MDUgMTguMTY4NyA0LjY1MDQgMTguMjk5OEM0LjYzODQ0IDE4LjQ0MTkgNC42NTc4NyAxOC41ODUgNC43MDczMSAxOC43MTg3QzQuNzU2NzYgMTguODUyNSA0LjgzNTAxIDE4Ljk3MzggNC45MzY1MyAxOS4wNzRDNS4wMzgwNCAxOS4xNzQxIDUuMTYwMzQgMTkuMjUwOCA1LjI5NDc2IDE5LjI5ODVDNS40MjkxOSAxOS4zNDYxIDUuNTcyNDUgMTkuMzYzNyA1LjcxNDQgMTkuMzQ5OEM1Ljg0MjQgMTkuMzM3OCA2LjAwODQgMTkuMjk3OCA2LjA4NDQgMTkuMjU5OEM2LjE1OTQgMTkuMjIyOCA3LjUyMDQgMTcuODkyOCA5LjExMDQgMTYuMzA1OEwxMi4wMDA0IDEzLjQyMDhMMTQuODkwNCAxNi4zMDU4QzE2LjQ4MDQgMTcuODkyOCAxNy44NDI0IDE5LjIyMjggMTcuOTE4NCAxOS4yNjA4QzE3Ljk5NDQgMTkuMjk4OCAxOC4xNjY0IDE5LjMzODggMTguMzAwNCAxOS4zNDk4QzE4LjczNDQgMTkuMzg0OCAxOS4xMDE0IDE5LjE1MzggMTkuMjkxNCAxOC43MjQ4QzE5LjM4NTQgMTguNTEwOCAxOS4zNzE0IDE4LjEzNzggMTkuMjYxNCAxNy45MTc4QzE5LjIyMzQgMTcuODQxOCAxNy44OTM0IDE2LjQ3ODggMTYuMzA2NCAxNC44ODk4TDEzLjQyMTQgMTEuOTk5OEwxNi4zMDY0IDkuMTA5ODJDMTcuODkzNCA3LjUxOTgyIDE5LjIyMjQgNi4xNTg4MiAxOS4yNTk0IDYuMDg0ODJDMTkuNDg4NCA1LjYyOTgyIDE5LjMwNDQgNS4wMzg4MiAxOC44NTI0IDQuNzcyODJDMTguNjg3NCA0LjY3NTgyIDE4LjYxODQgNC42NTk4MiAxOC4zNjA0IDQuNjYwODJDMTguMTQ4NCA0LjY2MDgyIDE4LjAxOTQgNC42ODI4MiAxNy45MjA0IDQuNzM0ODJDMTcuODQzNCA0Ljc3NDgyIDE2LjQ4MDQgNi4xMDY4MiAxNC44OTA0IDcuNjkzODJMMTIuMDAwNCAxMC41Nzg4TDkuMTEwNCA3LjY5MzgyQzcuNTIwNCA2LjEwNjgyIDYuMTU4NCA0Ljc3NjgyIDYuMDgyNCA0LjczODgyQzUuODk1NCA0LjY0NDgyIDUuNTAxNCA0LjYyMjgyIDUuMzA1NCA0LjY5NTgyWiIgZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGZpbGw9IiM5OTk5OTkiLz4KPC9nPgo8L3N2Zz4K") no-repeat center;
+}
+dialog[data-kind="select"] .close-icon::before,
+dialog[data-kind="select"] .close-icon::after { display: none; }
+dialog[data-kind="select"] .dialog-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  gap: 12px;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+}
+.select-search {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+  height: 48px;
+  padding: 11px 12px;
+  border: 1px solid #d4d4d4;
+  border-radius: 14px;
+  background: #fff;
+}
+.select-search:focus-within { border: 2px solid var(--focus); padding: 10px 11px; }
+.select-search > img { flex: none; }
+.select-search input {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #262626;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 22.4px;
+  appearance: none;
+}
+.select-search input::placeholder { color: #696969; opacity: 1; }
+.select-search input::-webkit-search-cancel-button { cursor: pointer; }
+.select-options {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-block: 0 4px;
+  scrollbar-width: thin;
+}
+.select-option {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 12px;
+  min-height: 38.4px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: #292929;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 22.4px;
+  cursor: pointer;
+}
+.select-option input {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  border: 1px solid #d4d4d4;
+  border-radius: 50%;
+  background: #fff;
+  appearance: none;
+  cursor: pointer;
+}
+.select-option input:checked { border: 0; background: url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiB2aWV3Qm94PSIwIDAgMjAgMjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJDaGVja2JveCI+CjxwYXRoIGQ9Ik0wIDEwQzAgNC40NzcxNSA0LjQ3NzE1IDAgMTAgMFYwQzE1LjUyMjggMCAyMCA0LjQ3NzE1IDIwIDEwVjEwQzIwIDE1LjUyMjggMTUuNTIyOCAyMCAxMCAyMFYyMEM0LjQ3NzE1IDIwIDAgMTUuNTIyOCAwIDEwVjEwWiIgZmlsbD0iIzAzODcyNSIvPgo8Y2lyY2xlIGlkPSJDaGVjayIgY3g9IjEwIiBjeT0iMTAiIHI9IjQiIGZpbGw9IndoaXRlIi8+CjwvZz4KPC9zdmc+Cg==") no-repeat center; }
+.select-option:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: -2px; }
+.select-option-label { min-width: 0; overflow-wrap: anywhere; }
+dialog[data-kind="select"] .select-empty { margin: 0; padding: 16px 12px; color: #696969; font-size: 16px; line-height: 22.4px; }
+dialog[data-kind="select"] .dialog-actions { flex: none; margin-top: 12px; }
+dialog[data-kind="select"] .dialog-actions .button { border-radius: 14px; }
+@media (hover: hover) { .select-option:hover { background: var(--subtle); } }
 /* These information dialogs keep close/actions visible while the body scrolls. */
 dialog:is([data-kind="repayment"], [data-kind="loan-info"])[open] {
   display: flex;
@@ -805,6 +934,7 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
  */
 .screen.is-checking .control input,
 .screen.is-checking .control select,
+.screen.is-checking .control .select-trigger,
 .screen.is-checking .control textarea {
   border-color: #e5e5e6;
   color: #292929;
@@ -813,7 +943,8 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
   box-shadow: none;
   opacity: 1;
 }
-.screen.is-checking .control select { background-image: none; }
+.screen.is-checking .control select,
+.screen.is-checking .control .select-trigger { background-image: none; }
 .screen.is-checking .control:has(select) > img,
 .screen.is-checking .select-caret { visibility: hidden; }
 .screen.is-checking .save-button:disabled { opacity: 1; }
@@ -1489,6 +1620,8 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
   let loginMode = false, loginFromIntro = false, returnToReview = false, busy = false, sequence = 0;
   let resendUntil = 0, resendTimer, toastTimer, objectURL = '', dialogTrigger = null;
   let uploadError = '';
+  const selectFields = new Map();
+  let activeSelect = null;
   const registration = new Set(['intro', 'citizenship', 'availability', 'account', 'email']);
   const order = ['intro', 'citizenship', 'availability', 'account', 'email', 'student', 'student-verified', 'contacts', 'funding', 'bank', 'bank-verified', 'documents', 'review'];
   const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -1506,6 +1639,7 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
     toastTimer = setTimeout(() => { toast.hidden = true; }, 4200);
   }
   function openDialog(title, body, actions, kind = '') {
+    clearSelectDialog();
     if (busy) { sequence++; busy=false; render(); }
     window.SLASVerificationMotion?.cancel();
     if (!dialog.open) dialogTrigger = document.activeElement;
@@ -1516,15 +1650,75 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
     if (!dialog.open) dialog.showModal();
     dialog.scrollTop = 0;
     document.getElementById('dialog-body').scrollTop = 0;
+    if (kind === 'select') {
+      const titleElement = document.getElementById('dialog-title');
+      titleElement.tabIndex = -1;
+      titleElement.focus({preventScroll:true});
+    }
   }
-  function closeDialog() { if (dialog.open) dialog.close(); }
-  dialog.addEventListener('close', () => { if (dialogTrigger && dialogTrigger.isConnected) dialogTrigger.focus({preventScroll:true}); verifyEmailCode(); });
+  function clearSelectDialog() {
+    if (activeSelect) activeSelect.trigger.setAttribute('aria-expanded','false');
+    activeSelect = null;
+  }
+  function closeDialog() { clearSelectDialog(); if (dialog.open) dialog.close(); }
+  dialog.addEventListener('close', () => {
+    if (dialog.open) return;
+    clearSelectDialog();
+    if (dialogTrigger && dialogTrigger.isConnected) dialogTrigger.focus({preventScroll:true});
+    verifyEmailCode();
+  });
   dialog.addEventListener('click', event => {
+    if (event.target.closest('[data-select-submit]')) submitSelect();
     if (event.target.closest('[data-dialog-close]')) closeDialog();
     if (event.target === dialog) {
       const r = dialog.getBoundingClientRect();
       if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) closeDialog();
     }
+  });
+  function syncSelectTrigger(trigger) {
+    const config = selectFields.get(trigger.dataset.select);
+    if (!config) return;
+    const value = state[trigger.dataset.select] || '';
+    trigger.value = value;
+    trigger.classList.toggle('is-placeholder',!value);
+    trigger.querySelector('.select-value').textContent = value || config.placeholder;
+  }
+  function renderSelectOptions() {
+    if (!activeSelect) return;
+    const query = document.getElementById('select-search').value.trim().toLocaleLowerCase();
+    const matches = activeSelect.options.filter(value => value.toLocaleLowerCase().includes(query));
+    const list = dialog.querySelector('.select-options');
+    list.innerHTML = matches.map(value => '<label class="select-option' + (value === activeSelect.draft ? ' is-selected' : '') + '"><input type="radio" name="select-option" value="' + esc(value) + '"' + (value === activeSelect.draft ? ' checked' : '') + '><span class="select-option-label">' + esc(value) + '</span></label>').join('') || '<p class="select-empty" role="status">No results found</p>';
+    list.scrollTop = 0;
+    dialog.querySelector('[data-select-submit]').disabled = !activeSelect.options.includes(activeSelect.draft);
+  }
+  function openSelect(trigger) {
+    const name = trigger.dataset.select, config = selectFields.get(name);
+    if (busy || trigger.disabled || !trigger.isConnected || !config) return;
+    const options = config.options.slice();
+    const body = '<label class="select-search">' + img('data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiB2aWV3Qm94PSIwIDAgMTYgMTYiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJJY29uIj4KPHBhdGggaWQ9IlZlY3RvciIgZD0iTTExLjMzMzMgN0MxMS4zMzMzIDQuNjA2NzcgOS4zOTMyMyAyLjY2NjY3IDcgMi42NjY2N0M0LjYwNjc3IDIuNjY2NjcgMi42NjY2NyA0LjYwNjc3IDIuNjY2NjcgN0MyLjY2NjY3IDkuMzkzMjMgNC42MDY3NyAxMS4zMzMzIDcgMTEuMzMzM0M5LjM5MzIzIDExLjMzMzMgMTEuMzMzMyA5LjM5MzIzIDExLjMzMzMgN1pNMTIuNjY2NyA3QzEyLjY2NjcgOC4zMjQ1MiAxMi4yMTA3IDkuNTQxNjcgMTEuNDQ5MiAxMC41MDY1TDEzLjg4NTQgMTIuOTQyN0MxNC4xNDU4IDEzLjIwMzEgMTQuMTQ1OCAxMy42MjUxIDEzLjg4NTQgMTMuODg1NEMxMy42MjUxIDE0LjE0NTggMTMuMjAzMSAxNC4xNDU4IDEyLjk0MjcgMTMuODg1NEwxMC41MDY1IDExLjQ0OTJDOS41NDE2NyAxMi4yMTA3IDguMzI0NTIgMTIuNjY2NyA3IDEyLjY2NjdDMy44NzAzOSAxMi42NjY3IDEuMzMzMzMgMTAuMTI5NiAxLjMzMzMzIDdDMS4zMzMzMyAzLjg3MDM5IDMuODcwMzkgMS4zMzMzMyA3IDEuMzMzMzNDMTAuMTI5NiAxLjMzMzMzIDEyLjY2NjcgMy44NzAzOSAxMi42NjY3IDdaIiBmaWxsPSIjNjk2OTY5Ii8+CjwvZz4KPC9zdmc+Cg==') + '<input id="select-search" type="search" placeholder="Search" aria-label="Search ' + esc(config.label.toLowerCase()) + '" autocomplete="off" spellcheck="false"></label><div class="select-options" role="radiogroup" aria-label="' + esc(config.label) + '"></div>';
+    openDialog(config.label,body,'<button type="button" class="button primary" data-select-submit disabled>Submit</button>','select');
+    dialogTrigger = trigger;
+    activeSelect = {name,trigger,options,draft:options.includes(trigger.value) ? trigger.value : '',screen:state.screen};
+    trigger.setAttribute('aria-expanded','true');
+    renderSelectOptions();
+  }
+  function submitSelect() {
+    if (!activeSelect || !dialog.open || busy) return;
+    const {name,trigger,draft,screen} = activeSelect;
+    if (trigger.disabled || !trigger.isConnected || screen !== state.screen || !selectFields.get(name)?.options.includes(draft)) return;
+    trigger.value = draft;
+    inputChanged(trigger);
+    closeDialog();
+  }
+  dialog.addEventListener('input', event => {
+    if (activeSelect && event.target.id === 'select-search') renderSelectOptions();
+  });
+  dialog.addEventListener('change', event => {
+    if (!activeSelect || !event.target.matches('input[name="select-option"]') || !activeSelect.options.includes(event.target.value)) return;
+    activeSelect.draft = event.target.value;
+    dialog.querySelectorAll('.select-option').forEach(option => option.classList.toggle('is-selected',option.querySelector('input').checked));
+    dialog.querySelector('[data-select-submit]').disabled = false;
   });
   function help(key) {
     if (key === 'repayment') { repaymentDialog(); return; }
@@ -1547,16 +1741,18 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
   function field(name, label, options = {}) {
     const value = options.value !== undefined ? options.value : state[name] || '';
     const helpHTML = options.help ? helpButton(options.help, label) : '';
-    let attrs = ' id="' + name + '" name="' + name + '" data-field="' + name + '"' + (options.required === false ? '' : ' required') + (options.maxlength ? ' maxlength="' + options.maxlength + '"' : '') + (options.inputmode ? ' inputmode="' + options.inputmode + '"' : '') + (options.autocomplete ? ' autocomplete="' + options.autocomplete + '"' : '') + (options.disabled ? ' disabled' : '') + ' aria-describedby="' + name + '-error' + (options.hint ? ' ' + name + '-hint' : '') + '"';
+    let attrs = ' id="' + name + '" name="' + name + '" data-field="' + name + '"' + (options.required === false || options.options ? '' : ' required') + (options.maxlength ? ' maxlength="' + options.maxlength + '"' : '') + (options.inputmode ? ' inputmode="' + options.inputmode + '"' : '') + (options.autocomplete && !options.options ? ' autocomplete="' + options.autocomplete + '"' : '') + (options.disabled ? ' disabled' : '') + ' aria-describedby="' + name + '-error' + (options.hint ? ' ' + name + '-hint' : '') + '"';
     let control;
     if (options.options) {
-      control = '<select' + attrs + '>' + (options.placeholder ? '<option value="">' + esc(options.placeholder) + '</option>' : '') + options.options.map(item => '<option value="' + esc(item) + '"' + (item === value ? ' selected' : '') + '>' + esc(item) + '</option>').join('') + '</select>';
+      const placeholder = options.placeholder || 'Select ' + label.toLowerCase();
+      selectFields.set(name,{label,placeholder,options:options.options.slice()});
+      control = '<button type="button" class="select-trigger' + (!value ? ' is-placeholder' : '') + '"' + attrs + ' data-select="' + name + '" value="' + esc(value) + '" aria-haspopup="dialog" aria-controls="dialog" aria-expanded="false" aria-labelledby="' + name + '-label ' + name + '-value"><span class="select-value" id="' + name + '-value">' + esc(value || placeholder) + '</span></button>';
     } else if (options.multiline) {
       control = '<textarea' + attrs + ' rows="2" placeholder="' + esc(options.placeholder || '') + '">' + esc(value) + '</textarea>';
     } else {
       control = '<input type="' + (options.type || 'text') + '"' + attrs + ' value="' + esc(value) + '" placeholder="' + esc(options.placeholder || '') + '">';
     }
-    return '<div class="field"><label for="' + name + '">' + esc(label) + (options.required === false ? '' : '<span class="required">*</span>') + helpHTML + '</label><div class="control">' + control + '</div>' + (options.hint ? '<p class="field-hint" id="' + name + '-hint">' + esc(options.hint) + '</p>' : '') + '<p class="field-error" id="' + name + '-error" hidden></p></div>';
+    return '<div class="field"><label id="' + name + '-label" for="' + name + '">' + esc(label) + (options.required === false ? '' : '<span class="required">*</span>') + helpHTML + '</label><div class="control">' + control + '</div>' + (options.hint ? '<p class="field-hint" id="' + name + '-hint">' + esc(options.hint) + '</p>' : '') + '<p class="field-error" id="' + name + '-error" hidden></p></div>';
   }
   function emailCode() {
     return '<div class="field"><label for="code">Confirmation code<span class="required">*</span></label><div class="otp-control" data-status="empty"><input id="code" name="code" data-field="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required aria-describedby="code-error code-status" value="'+esc(code)+'"'+(state.accountConfirmed?' readonly aria-readonly="true"':'')+'><div class="otp-cells" aria-hidden="true">'+Array.from({length:6},()=>'<span class="otp-cell is-empty">.</span>').join('')+'</div></div><p class="field-error" id="code-error" hidden></p><span id="code-status" class="visually-hidden" role="status" aria-live="polite">'+(state.accountConfirmed?'Email confirmed. Continue to your application.':'')+'</span></div>';
@@ -1640,6 +1836,8 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
     return '<div class="file-card">' + img(assets.document,'file-symbol') + '<button type="button" class="file-copy" data-action="preview-file"><strong>' + esc(state.admission.name) + '</strong><span>' + (/\.pdf$/i.test(state.admission.name) ? 'PDF' : 'JPG') + ' ' + size + '</span></button><button type="button" class="remove-file" data-action="remove-file" aria-label="Remove admission letter">×</button></div><input class="visually-hidden" id="admission" name="admission" type="file" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg"><button type="button" class="text-button replace-file" data-action="replace-file">Replace file</button>';
   }
   function render() {
+    if (activeSelect) closeDialog();
+    selectFields.clear();
     const scrollState=window.SLASViewport?.captureScroll();
     window.SLASVerificationMotion?.cancel();
     const screen = state.screen; let body = '', bottom = '', cls = 'screen-' + screen;
@@ -1721,6 +1919,7 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
     return screen;
   }
   function navigate(screen, options = {}) {
+    closeDialog();
     screen = allowedScreen(screen);
     sequence++; busy = false; state.screen = screen;
     if (!options.fromHistory) history.pushState({slas:true,screen},'',location.pathname + location.search + '#' + screen);
@@ -1853,6 +2052,8 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
   function inputChanged(target) {
     const name=target.dataset.field; if (!name || busy || target.readOnly || target.disabled) return;
     let value = target.type === 'checkbox' ? target.checked : target.value;
+    if (target.dataset.select && !selectFields.get(name)?.options.includes(value)) return;
+    const stateChanged = name === 'state' && value !== state.state;
     if (['phone','bvn','account','code'].includes(name)) {value=String(value).replace(/\D/g,'').slice(0,name==='account'?10:name==='code'?6:11);target.value=value;}
     if (name==='dob') {const digits=String(value).replace(/\D/g,'').slice(0,8);value=digits.slice(0,2)+(digits.length>2?'/'+digits.slice(2,4):'')+(digits.length>4?'/'+digits.slice(4):'');target.value=value;}
     if (name==='jamb') {value=String(value).toUpperCase();target.value=value;}
@@ -1860,10 +2061,13 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
     if (name==='password') password=value;
     else if (name==='confirmation') confirmation=value;
     else if (name==='code') code=value;
-    else {const changes={[name]:value};if(name==='state')changes.lga='';update(changes);}
-    if (name==='state') {
-      const lga=document.getElementById('lga');lga.innerHTML='<option value="">Select your LGA</option>'+(model.REGIONS[value]||[]).map(v=>'<option>'+esc(v)+'</option>').join('');lga.disabled=!value;
+    else {const changes={[name]:value};if(stateChanged)changes.lga='';update(changes);}
+    if (stateChanged) {
+      const lga=document.getElementById('lga'), config=selectFields.get('lga');
+      if (config) config.options=(model.REGIONS[value]||[]).slice();
+      if (lga) { lga.disabled=!value; syncSelectTrigger(lga); }
     }
+    if (target.dataset.select) syncSelectTrigger(target);
     if (name==='funding') refreshFundingSelection();
     refreshControls();
     if (target.getAttribute('aria-invalid')==='true') showFieldError(name);
@@ -1904,6 +2108,8 @@ dialog:is([data-kind="repayment"], [data-kind="loan-info"]) .loan-facts dd { min
     if(seconds===0)clearInterval(resendTimer);
   }
   document.addEventListener('click', event=>{
+    const selectTarget=event.target.closest('[data-select]');
+    if(selectTarget){event.preventDefault();openSelect(selectTarget);return;}
     const helpTarget=event.target.closest('[data-help]');
     if(helpTarget){event.preventDefault();event.stopPropagation();help(helpTarget.dataset.help);return;}
     const target=event.target.closest('[data-action]');if(!target||target.disabled)return;
