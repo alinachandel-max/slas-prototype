@@ -1177,7 +1177,7 @@ dialog[data-kind="tuition-released"] .dialog-body { margin-top: 0; }
 </style>
   <style data-source="page-flow/tuition-motion.css">
 /* Same restrained wave language as the existing Verified transition. */
-dialog[data-kind="tuition-released"] .dialog-header h2 { color: #027b22; }
+dialog[data-kind="tuition-released"] .dialog-header h2 { color: #262626; }
 .tuition-motion-word { display: inline-block; white-space: nowrap; }
 .tuition-motion-letter { display: inline-block; transform: translateY(0); }
 .tuition-motion-heading { overflow: visible; }
@@ -1190,7 +1190,7 @@ dialog.tuition-motion-resizing .dialog-header,
 dialog.tuition-motion-resizing .dialog-actions { flex: none; }
 @media (prefers-reduced-motion: reduce) {
   .tuition-motion-letter { transform: none !important; }
-  dialog[data-kind="tuition-released"] .tuition-motion-letter { color: #027b22 !important; }
+  dialog[data-kind="tuition-released"] .tuition-motion-letter { color: #262626 !important; }
   dialog:is([data-kind="tuition-confirm"], [data-kind="tuition-processing"], [data-kind="tuition-released"]) .dialog-body,
   dialog[data-kind="tuition-released"] .loans-unlocked,
   dialog[data-kind="tuition-released"] .loans-release-avatar,
@@ -2149,9 +2149,9 @@ dialog.tuition-motion-resizing .dialog-actions { flex: none; }
     const letters = titleLetters(record);
     const duration = letterDuration + Math.max(0,letters.length - 1) * letterStagger;
     const waves = letters.map((letter,index) => play(record,letter,[
-      {color:'#262626',transform:'translateY(0)',offset:0},
-      {color:'#027b22',transform:'translateY(-2px)',offset:.42},
-      {color:'#027b22',transform:'translateY(0)',offset:1}
+      {transform:'translateY(0)',offset:0},
+      {transform:'translateY(-2px)',offset:.42},
+      {transform:'translateY(0)',offset:1}
     ],{duration:letterDuration,delay:index * letterStagger,easing:'cubic-bezier(.37, 0, .63, 1)',fill:'both'})).filter(Boolean);
     Promise.all(waves.map(animation => animation.finished.catch(function () {}))).then(function () {
       if (valid(record)) restoreTitle(record);
