@@ -248,7 +248,7 @@ a { color: var(--brand); text-decoration: none; }
 
 .fields { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 .field { display: flex; flex-direction: column; min-width: 0; }
-.field > label, .field-label {
+.field > label:not(.upload-box), .field-label {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -517,7 +517,8 @@ a { color: var(--brand); text-decoration: none; }
   line-height: 32px;
   cursor: pointer;
 }
-.upload-box img { width: 24px; height: 24px; object-fit: contain; }
+.upload-action { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; }
+.upload-action img { display: block; width: 20px; height: 20px; }
 .upload-box input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .upload-box + input[type="file"] { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 .upload-box:focus-within { outline: 2px solid var(--focus); outline-offset: 3px; }
@@ -538,20 +539,21 @@ button.file-copy { padding: 0; border: 0; border-radius: 4px; color: inherit; ba
 .screen-documents .agreements { margin-top: auto; padding: 32px 0 0; }
 .agreement { min-width: 0; }
 .agreement > label, label.agreement { display: flex; align-items: flex-start; gap: 12px; min-width: 0; cursor: pointer; }
-.agreement input[type="checkbox"] {
-  appearance: none;
-  -webkit-appearance: none;
-  flex: 0 0 20px;
+.agreement-control { position: relative; display: block; flex: 0 0 20px; width: 20px; height: 20px; margin-top: 1px; }
+.agreement-control input[type="checkbox"] {
+  position: absolute;
+  inset: 0;
   width: 20px;
   height: 20px;
-  margin: 1px 0 0;
-  border: 1px solid #dedee0;
-  border-radius: 6px;
-  background: #f1f1f2;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
   cursor: pointer;
 }
-.agreement input[type="checkbox"]:checked { border-color: var(--brand); background: var(--brand) url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEYElEQVR4nO1bTUgbQRR+Owjm0iSHoocUzUFLLYgeYnsRpDW9VLCgN0Ft8VJLG0p76Q96sFA8SbEWTxaNxVvTKtSL0SJ4qc2hwaJFPUTRQkMPSbzoKeVtjGi6f7M7uzvb7QeCWePufN+892bem7dCPp/Pg4tBwOUg4HIQcDkIuBwEXA4CLkeZVQ/KHOYgmf4ByfQ6pDI/IXuUO/mbr9wLfs85CPouQLUvAA0Vl8Dv8TpfgOXdVZjdjMPcVhxS2T2q/22oqIPGyjroqe+Alqorpo1RYL0RwpkeTUyJP/g7CwR9AWivvQGRph7RSrgUIGMCcSlEQreZCiGwEGA0MQlDK2OmEi+1iMHmB6J72CpA5jAHffNPRD+3A731HTDQfN+QNQh6BcCgFp7phlR2H+wEWkO8a1q3CIIeAZLpDWid6bbM5NWAS+Zi17S4cpi+EUpyRh6BY8Ex4dhMtYAUJ2avZAmJOx+p3IH8K+SLlhCmtE6i9YsvVsa4Jl8EjrFv/ilbAaJrMZhai4FTMLu5II6ZSQxIOcD05eLB9t0l1aSKqN0ouvbBceRPb80NWUAquwc149fBqdBiBUTpBpjG8oKWqqtiIkSzxGmxAkHJAmrGr3Fh/iPh5xAJ9Z587ozd05x/4Oz/fpigt4Dl3VUuyL9tGz5DHoGZII0VLO9+oRcgysGyh+SlUl7aPf/s5iK9AN9+0e+rrSCPGFp5TXWvua0FOgEyYgFzg0vy6Pu0AqAry22PidRFrN7al9a+kyWPk4IFGD3AmKa5KpxMrwNvOb3RNHwnt0/jAge6CGB03u7/LM4izXptNnkElQvs6Fj+RlqfiQJgiQrr+Fim0hKtrSCvxIkAI7TXhs98RiHUylRWkVcCYXWjzNEBFUEeyDMV4PHiS8nrUkR5IS8rAB5Q6ilC9H2SXqJOE7aLvBynMukBn9P1kGLVaKJtWOKeBeK4HNkx83IpMZG6WO3Vf9KCIsjt1HAQdpm93HOJ1EWjx9EoAM121Qqfx54DzQL4PV5xGTMCFOBRXDowWk/+Mp0LSK3rek+N5QKjldG+sVJ69hUFuHXRuADFmCAlAmZ1Vi11SsfoglJJ7PyrELMBYhB63/kG/OVeiH6PaXIPFsCcZLt/SV+PUCTUS517K5m7HRVmNVcmagJY1a1lFiJNZ+uJVAL4Pd6/CpJOQqGMHjCWC0QcagXo+2qzr0kAJI+5vtMwKPYOBdhkgz31HcyWRauap7R2kBGtN524Ocy8SdEM4BgHKA5OiNYvoitgmYvneIDkCx1jAXMKIsHjMhePIuCYcKNFm8MQPTs6FIEndzDSJifob5TcP+4coesC58HsmdQEg8cdmhhx7QKuTIW2uIC9zdJRsQo0Zpk1FPcmtjdLl7rE6NdJTX05elHcmrPcnQqsX5hAIdAiCs1Ve9wSN02A0hNZFAN7DWiP2zG4YSqLfu6oV2a0vDSFh6+lZ3VYt8dyPFakkbBVew3h/8vTLgexewB24w8OLXEsUt2QaAAAAABJRU5ErkJggg==") center / 14px 14px no-repeat; }
-.agreement input[type="checkbox"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.agreement-mark { position: absolute; inset: 2px; border: .833px solid #d4d4d4; border-radius: 4px; background: transparent; pointer-events: none; }
+.agreement-control input[type="checkbox"]:checked + .agreement-mark { border: 0; background: var(--brand) url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiB2aWV3Qm94PSIwIDAgMTAgMTAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJzeXN0ZW0gLyBjaGVjayI+CjxwYXRoIGlkPSJWZWN0b3IiIGQ9Ik04Ljk3NzQ1IDIuMTMwMDJDOS4yMjE1MyAyLjM3NDEgOS4yMjE1MyAyLjc2OTgyIDguOTc3NDUgMy4wMTM5TDQuMjYzNDEgNy43Mjc5NUM0LjAxOTMzIDcuOTcyMDIgMy42MjM2IDcuOTcyMDIgMy4zNzk1MiA3LjcyNzk1TDEuMDIyNSA1LjM3MDkyQzAuNzc4NDIzIDUuMTI2ODUgMC43Nzg0MjMgNC43MzExMiAxLjAyMjUgNC40ODcwNEMxLjI2NjU4IDQuMjQyOTYgMS42NjIzMSA0LjI0Mjk2IDEuOTA2MzggNC40ODcwNEwzLjgyMTQ2IDYuNDAyMTJMOC4wOTM1NyAyLjEzMDAyQzguMzM3NjQgMS44ODU5NCA4LjczMzM3IDEuODg1OTQgOC45Nzc0NSAyLjEzMDAyWiIgZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGZpbGw9IndoaXRlIi8+CjwvZz4KPC9zdmc+Cg==") center no-repeat; }
+.agreement-control input[type="checkbox"]:focus-visible + .agreement-mark { outline: 2px solid var(--focus); outline-offset: 3px; }
+.agreement-control input[type="checkbox"]:disabled { cursor: default; }
 .agreement-copy { display: block; flex: 1; min-width: 0; color: #454545; font-size: 14px; font-weight: 400; line-height: 22px; }
 .agreement-copy small { display: block; margin-top: 2px; color: #757575; font-size: 12px; line-height: 18px; }
 .agreement-link { margin-left: 32px; }
@@ -571,6 +573,7 @@ button.file-copy { padding: 0; border: 0; border-radius: 4px; color: inherit; ba
 .status-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; font-size: 14px; line-height: 22px; }
 .status-row > :first-child { color: #858b91; }
 .status-badge { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 10px; border: 1px solid #f6d8a2; border-radius: 6px; color: #a66927; background: #fff5df; font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+.status-badge.is-approved { border-color: #c3e9cc; color: #027b22; background: #edf8f0; }
 .status-row + .text-button, .status-row + .link { margin-top: 4px; }
 .screen-record .status-row { margin: 0 0 24px; }
 .plain-details { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 0; padding: 0; }
@@ -1170,6 +1173,32 @@ dialog[data-kind="tuition-released"] .dialog-body { margin-top: 0; }
   .loans-session-arrow { transition: none; }
   .loans-spinner { animation: none; }
 }
+
+</style>
+  <style data-source="page-flow/tuition-motion.css">
+/* Same restrained wave language as the existing Verified transition. */
+dialog[data-kind="tuition-released"] .dialog-header h2 { color: #027b22; }
+.tuition-motion-word { display: inline-block; white-space: nowrap; }
+.tuition-motion-letter { display: inline-block; transform: translateY(0); }
+.tuition-motion-heading { overflow: visible; }
+dialog[data-kind="tuition-processing"].tuition-motion-settled .loans-spinner,
+dialog[data-kind="tuition-processing"].tuition-motion-settled .verification-dots i { animation: none !important; transform: none; }
+/* During a height interpolation, let the body take the changing space. The
+   title and action area remain readable and the footer stays at the bottom. */
+dialog.tuition-motion-resizing .dialog-body { flex: 1 1 auto; }
+dialog.tuition-motion-resizing .dialog-header,
+dialog.tuition-motion-resizing .dialog-actions { flex: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tuition-motion-letter { transform: none !important; }
+  dialog[data-kind="tuition-released"] .tuition-motion-letter { color: #027b22 !important; }
+  dialog:is([data-kind="tuition-confirm"], [data-kind="tuition-processing"], [data-kind="tuition-released"]) .dialog-body,
+  dialog[data-kind="tuition-released"] .loans-unlocked,
+  dialog[data-kind="tuition-released"] .loans-release-avatar,
+  dialog[data-kind="tuition-released"] .loans-payment-instructions { opacity: 1 !important; transform: none !important; }
+}
+
+/* Refresh the released loan behind the sheet without replaying page entry. */
+.screen-body.is-background-update { animation: none; }
 
 </style>
 </head>
@@ -2009,6 +2038,186 @@ dialog[data-kind="tuition-released"] .dialog-body { margin-top: 0; }
 }());
 
 </script>
+  <script data-source="page-flow/tuition-motion.js">
+/* Scoped tuition-sheet motion. This module never advances a payment or route. */
+(function () {
+  'use strict';
+
+  const kinds = new Set(['tuition-confirm','tuition-processing','tuition-released']);
+  const preference = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  const records = new WeakMap();
+  const live = new Set();
+  const watched = new WeakSet();
+  const sheetDuration = 260;
+  const letterDuration = 700;
+  const letterStagger = 30;
+  const revealDuration = 260;
+  const ease = 'cubic-bezier(.32, 0, .2, 1)';
+
+  function reduced() { return Boolean(preference && preference.matches); }
+  function canAnimate(dialog) {
+    return Boolean(dialog && dialog.isConnected && dialog.open && typeof dialog.animate === 'function' && !document.hidden && !reduced());
+  }
+  function valid(record) { return records.get(record.dialog) === record && !record.cancelled; }
+  function restoreTitle(record) {
+    const title = record.title;
+    if (!title) return;
+    // A later render may reuse h2 but replace its children. Never restore an
+    // earlier title over new application content.
+    if (record.visual && title.childNodes.length === 1 && title.firstChild === record.visual) title.textContent = record.text;
+    if (title.getAttribute('aria-label') === record.text) {
+      if (record.hadAriaLabel) title.setAttribute('aria-label',record.ariaLabel);
+      else title.removeAttribute('aria-label');
+    }
+    title.classList.remove('tuition-motion-heading');
+  }
+  function cancel(dialog) {
+    if (dialog && kinds.has(dialog.dataset.kind)) dialog.classList.add('tuition-motion-settled');
+    const record = dialog && records.get(dialog);
+    if (!record) return;
+    record.cancelled = true;
+    record.animations.forEach(animation => animation.cancel());
+    record.animations.clear();
+    restoreTitle(record);
+    dialog.classList.remove('tuition-motion-resizing');
+    records.delete(dialog);
+    live.delete(record);
+  }
+  function settle(dialog) { cancel(dialog); }
+  function settleAll() { Array.from(live).forEach(record => settle(record.dialog)); }
+  function watch(dialog) {
+    if (watched.has(dialog)) return;
+    watched.add(dialog);
+    dialog.addEventListener('close',function () { if (!dialog.open) cancel(dialog); });
+  }
+  function play(record, element, keyframes, options) {
+    if (!element || typeof element.animate !== 'function' || !valid(record)) return null;
+    const animation = element.animate(keyframes,options);
+    record.animations.add(animation);
+    // The cancellation branch consumes Animation.finished rejection; close,
+    // navigation and preference changes therefore leave no rejected promise.
+    animation.finished.then(function () {
+      record.animations.delete(animation);
+      if (valid(record)) animation.cancel();
+    },function () { record.animations.delete(animation); });
+    return animation;
+  }
+  function titleLetters(record) {
+    const title = record.dialog.querySelector('#dialog-title');
+    if (!title || !title.textContent.trim()) return [];
+    record.title = title;
+    record.text = title.textContent;
+    record.hadAriaLabel = title.hasAttribute('aria-label');
+    record.ariaLabel = title.getAttribute('aria-label');
+    const visual = document.createElement('span');
+    visual.className = 'tuition-motion-visual';
+    visual.setAttribute('aria-hidden','true');
+    const letters = [];
+    // Whole words can wrap on a narrow viewport, while each glyph can move.
+    // No duplicate hidden text is added: h2.textContent remains unchanged.
+    record.text.split(/(\s+)/).forEach(part => {
+      if (/^\s+$/.test(part)) { visual.appendChild(document.createTextNode(part)); return; }
+      if (!part) return;
+      const word = document.createElement('span');
+      word.className = 'tuition-motion-word';
+      Array.from(part).forEach(character => {
+        const letter = document.createElement('span');
+        letter.className = 'tuition-motion-letter';
+        letter.textContent = character;
+        word.appendChild(letter);
+        letters.push(letter);
+      });
+      visual.appendChild(word);
+    });
+    record.visual = visual;
+    title.setAttribute('aria-label',record.text);
+    title.classList.add('tuition-motion-heading');
+    title.replaceChildren(visual);
+    return letters;
+  }
+  function processingWave(record) {
+    titleLetters(record).forEach((letter,index) => {
+      play(record,letter,[
+        {transform:'translateY(0)',offset:0},
+        {transform:'translateY(-1.6px)',offset:.16},
+        {transform:'translateY(0)',offset:.32},
+        {transform:'translateY(0)',offset:1}
+      ],{duration:1800,delay:index * 28,iterations:Infinity,easing:'cubic-bezier(.37, 0, .63, 1)',fill:'both'});
+    });
+  }
+  function successWave(record) {
+    const letters = titleLetters(record);
+    const duration = letterDuration + Math.max(0,letters.length - 1) * letterStagger;
+    const waves = letters.map((letter,index) => play(record,letter,[
+      {color:'#262626',transform:'translateY(0)',offset:0},
+      {color:'#027b22',transform:'translateY(-2px)',offset:.42},
+      {color:'#027b22',transform:'translateY(0)',offset:1}
+    ],{duration:letterDuration,delay:index * letterStagger,easing:'cubic-bezier(.37, 0, .63, 1)',fill:'both'})).filter(Boolean);
+    Promise.all(waves.map(animation => animation.finished.catch(function () {}))).then(function () {
+      if (valid(record)) restoreTitle(record);
+    });
+    const items = [
+      record.dialog.querySelector('.loans-unlocked'),
+      record.dialog.querySelector('.loans-release-avatar'),
+      record.dialog.querySelector('.loans-payment-instructions')
+    ].filter(Boolean);
+    items.forEach((element,index) => {
+      play(record,element,[{opacity:0,transform:'translateY(6px)'},{opacity:1,transform:'translateY(0)'}],{
+        duration:revealDuration,delay:200 + index * 60,easing:ease,fill:'both'
+      });
+    });
+    return Math.max(duration,200 + Math.max(0,items.length - 1) * 60 + (items.length ? revealDuration : 0));
+  }
+  function resizeSheet(record, previous) {
+    const dialog = record.dialog;
+    const rect = dialog.getBoundingClientRect();
+    if (!previous || !previous.open || !kinds.has(previous.kind) || Math.abs(previous.width - rect.width) > 1) return;
+    const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const height = Math.min(previous.height,Math.max(0,viewportHeight - 4));
+    if (!height || Math.abs(height - rect.height) < 1) return;
+    dialog.classList.add('tuition-motion-resizing');
+    const animation = play(record,dialog,[{height:height + 'px'},{height:rect.height + 'px'}],{duration:sheetDuration,easing:ease,fill:'both'});
+    if (!animation) { dialog.classList.remove('tuition-motion-resizing'); return; }
+    animation.finished.then(function () {
+      if (valid(record)) dialog.classList.remove('tuition-motion-resizing');
+    },function () {});
+  }
+  function beforeChange(dialog, nextKind) {
+    if (!dialog || dialog.nodeType !== 1) return null;
+    const rect = dialog.getBoundingClientRect();
+    const measurement = {height:rect.height,width:rect.width,kind:dialog.dataset.kind || '',open:Boolean(dialog.open),nextKind:nextKind || ''};
+    cancel(dialog);
+    return measurement;
+  }
+  function afterChange(dialog, previous) {
+    if (!dialog || dialog.nodeType !== 1 || !kinds.has(dialog.dataset.kind)) return {durationMs:0};
+    cancel(dialog);
+    watch(dialog);
+    if (!canAnimate(dialog)) return {durationMs:0};
+    dialog.classList.remove('tuition-motion-settled');
+    const record = {dialog,animations:new Set(),cancelled:false,title:null,visual:null};
+    records.set(dialog,record);
+    live.add(record);
+    resizeSheet(record,previous);
+    let duration = sheetDuration;
+    if (dialog.dataset.kind === 'tuition-processing') processingWave(record);
+    else if (dialog.dataset.kind === 'tuition-released') duration = Math.max(duration,successWave(record));
+    else if (!previous || previous.kind !== 'tuition-confirm' || !previous.open) {
+      play(record,dialog.querySelector('#dialog-body'),[{opacity:0,transform:'translateY(3px)'},{opacity:1,transform:'translateY(0)'}],{duration:180,easing:ease,fill:'both'});
+    }
+    return {durationMs:duration};
+  }
+  if (preference && preference.addEventListener) preference.addEventListener('change',function () { if (reduced()) settleAll(); });
+  else if (preference && preference.addListener) preference.addListener(function () { if (reduced()) settleAll(); });
+  document.addEventListener('visibilitychange',function () { if (document.hidden) settleAll(); });
+  window.addEventListener('pagehide',settleAll);
+  window.addEventListener('resize',settleAll);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize',settleAll);
+
+  window.SLASTuitionMotion = Object.freeze({beforeChange,afterChange,cancel,settle});
+}());
+
+</script>
   <script data-source="page-flow/app.js">
 /* SLAS Application 194:4446. Local interactive demonstration, no service calls. */
 (function () {
@@ -2060,6 +2269,7 @@ dialog[data-kind="tuition-released"] .dialog-body { margin-top: 0; }
     toastTimer = setTimeout(() => { toast.hidden = true; }, 4200);
   }
   function openDialog(title, body, actions, kind = '') {
+    const motionSnapshot=window.SLASTuitionMotion?.beforeChange(dialog,kind);
     clearSelectDialog();
     if (busy) { sequence++; busy=false; render(); }
     window.SLASVerificationMotion?.cancel();
@@ -2076,15 +2286,17 @@ dialog[data-kind="tuition-released"] .dialog-body { margin-top: 0; }
       titleElement.tabIndex = -1;
       titleElement.focus({preventScroll:true});
     }
+    window.SLASTuitionMotion?.afterChange(dialog,motionSnapshot);
   }
   function clearSelectDialog() {
     if (activeSelect) activeSelect.trigger.setAttribute('aria-expanded','false');
     activeSelect = null;
   }
   dialog.addEventListener('cancel', event => { if (dialog.dataset.kind === 'tuition-processing') event.preventDefault(); });
-  function closeDialog() { clearSelectDialog(); if (dialog.open) dialog.close(); }
+  function closeDialog() { window.SLASTuitionMotion?.cancel(dialog); clearSelectDialog(); if (dialog.open) dialog.close(); }
   dialog.addEventListener('close', () => {
     if (dialog.open) return;
+    window.SLASTuitionMotion?.cancel(dialog);
     clearSelectDialog();
     if (dialogTrigger && dialogTrigger.isConnected) dialogTrigger.focus({preventScroll:true});
     else if (portalRoutes.has(state.screen)) document.getElementById('screen-title')?.focus({preventScroll:true});
@@ -2238,7 +2450,7 @@ dialog[data-kind="tuition-released"] .dialog-body { margin-top: 0; }
     return '<label class="funding-card ' + (upkeep ? 'has-upkeep ' : '') + (state.funding===option?'is-selected':'') + '"><input type="radio" name="funding" data-field="funding" value="' + option + '"' + (state.funding===option?' checked':'') + '><span class="loan-label">' + (upkeep?'Tuition + upkeep':'Tuition only') + '</span><strong class="loan-total">' + money(model.amount({...state,funding:option})) + ' total</strong>' + (upkeep?'<span class="loan-monthly">Upkeep: ₦20,000 per month</span><span class="loan-period">For 9 months · ₦180,000 total</span>':'') + '<button type="button" class="text-button" data-help="' + (upkeep?'upkeep':'tuition') + '">Learn more</button>' + img(upkeep?assets.upkeep:assets.tuition,'loan-illustration') + '</label>';
   }
   function agreement(name, text, link, helpKey, note = '') {
-    return '<div class="agreement"><label><input type="checkbox" data-field="' + name + '" name="' + name + '"' + (state[name] ? ' checked' : '') + '><span class="agreement-copy">' + esc(text) + '</span></label>' + (note ? '<p class="field-hint agreement-note">' + esc(note) + '</p>' : '') + '<button type="button" class="text-button agreement-link" data-help="' + helpKey + '">' + esc(link) + '</button></div>';
+    return '<div class="agreement"><label><span class="agreement-control"><input type="checkbox" data-field="' + name + '" name="' + name + '"' + (state[name] ? ' checked' : '') + '><span class="agreement-mark" aria-hidden="true"></span></span><span class="agreement-copy">' + esc(text) + '</span></label>' + (note ? '<p class="field-hint agreement-note">' + esc(note) + '</p>' : '') + '<button type="button" class="text-button agreement-link" data-help="' + helpKey + '">' + esc(link) + '</button></div>';
   }
   function headerStep() {
     return ({student:1,'student-verified':1,contacts:2,funding:3,bank:4,'bank-verified':4,documents:5,review:5})[state.screen] || 0;
@@ -2255,11 +2467,11 @@ dialog[data-kind="tuition-released"] .dialog-body { margin-top: 0; }
     return '<header class="topbar ' + (isRegistration || isList ? 'registration-bar' : '') + '"><button class="icon-button" type="button" data-action="back" aria-label="Go back">' + img(assets.back) + '</button>' + center + '<button class="icon-button close-icon" type="button" data-action="exit" aria-label="Close application"></button></header>';
   }
   function uploaded() {
-    if (!state.admission) return '<label class="upload-box" for="admission"><span aria-hidden="true">+</span><span class="visually-hidden">Upload admission letter</span><input id="admission" name="admission" type="file" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" aria-describedby="admission-hint upload-error"></label>';
+    if (!state.admission) return '<label class="upload-box" for="admission"><span class="upload-action" aria-hidden="true"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiB2aWV3Qm94PSIwIDAgMjAgMjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJzeXN0ZW0gLyBhZGQiPgo8cGF0aCBpZD0iVmVjdG9yIiBkPSJNOS4xNjY2NyAxNS44MzMzVjEwLjgzMzNINC4xNjY2N0MzLjcwNjQzIDEwLjgzMzMgMy4zMzMzMyAxMC40NjAyIDMuMzMzMzMgMTBDMy4zMzMzMyA5LjUzOTc2IDMuNzA2NDMgOS4xNjY2NyA0LjE2NjY3IDkuMTY2NjdIOS4xNjY2N1Y0LjE2NjY3QzkuMTY2NjcgMy43MDY0MyA5LjUzOTc2IDMuMzMzMzMgMTAgMy4zMzMzM0MxMC40NjAyIDMuMzMzMzMgMTAuODMzMyAzLjcwNjQzIDEwLjgzMzMgNC4xNjY2N1Y5LjE2NjY3SDE1LjgzMzNDMTYuMjkzNiA5LjE2NjY3IDE2LjY2NjcgOS41Mzk3NiAxNi42NjY3IDEwQzE2LjY2NjcgMTAuNDYwMiAxNi4yOTM2IDEwLjgzMzMgMTUuODMzMyAxMC44MzMzSDEwLjgzMzNWMTUuODMzM0MxMC44MzMzIDE2LjI5MzYgMTAuNDYwMiAxNi42NjY3IDEwIDE2LjY2NjdDOS41Mzk3NiAxNi42NjY3IDkuMTY2NjcgMTYuMjkzNiA5LjE2NjY3IDE1LjgzMzNaIiBmaWxsPSIjMjYyNjI2Ii8+CjwvZz4KPC9zdmc+Cg==" alt=""></span><span class="visually-hidden">Upload admission letter</span><input id="admission" name="admission" type="file" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" aria-describedby="admission-hint upload-error"></label>';
     const size = state.admission.size >= 1024 * 1024 ? (state.admission.size / (1024 * 1024)).toFixed(1) + ' MB' : Math.max(1, Math.round(state.admission.size / 1024)) + ' KB';
     return '<div class="file-card">' + img(assets.document,'file-symbol') + '<button type="button" class="file-copy" data-action="preview-file"><strong>' + esc(state.admission.name) + '</strong><span>' + (/\.pdf$/i.test(state.admission.name) ? 'PDF' : 'JPG') + ' ' + size + '</span></button><button type="button" class="remove-file" data-action="remove-file" aria-label="Remove admission letter">×</button></div><input class="visually-hidden" id="admission" name="admission" type="file" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg"><button type="button" class="text-button replace-file" data-action="replace-file">Replace file</button>';
   }
-  function render() {
+  function render(options = {}) {
     if (activeSelect) closeDialog();
     selectFields.clear();
     const scrollState=window.SLASViewport?.captureScroll();
@@ -2307,7 +2519,7 @@ dialog[data-kind="tuition-released"] .dialog-body { margin-top: 0; }
       body = heading('Review application<br>and submit') + '<div class="record-list">' + summaryRows() + '</div><button type="button" class="text-button details-link" data-action="details">Your details and documents <span aria-hidden="true">›</span></button><div class="divider"></div>' + repayment(true) + '<div class="divider"></div><div class="agreements">' + agreement('terms','I agree to the Terms and Conditions for this application.','Read Terms and Conditions','terms') + agreement('gsi','I agree to the Global Standing Instruction (GSI) mandate.','Read GSI mandate','gsi','This allows recovery of due debt from your accounts.') + '</div>';
       bottom = footer('Submit application');
     } else if (screen === 'submitted') {
-      body = img(assets.success,'success-image') + heading('All Done! Application<br>submitted','Your application is approved. You can now release tuition.') + '<div class="record-list">' + summaryRows(false) + '</div><div class="status-row"><span>Status</span><span class="status-badge">Approved</span></div><button class="text-button" type="button" data-action="view-record">View application <span aria-hidden="true">›</span></button>';
+      body = img(assets.success,'success-image') + heading('All Done! Application<br>submitted','Your application is approved. You can now release tuition.') + '<div class="record-list">' + summaryRows(false) + '</div><div class="status-row"><span>Status</span><span class="status-badge is-approved">Approved</span></div><button class="text-button" type="button" data-action="view-record">View application <span aria-hidden="true">›</span></button>';
       bottom = footer('My applications',{secondary:true,save:false});
     } else if (screen === 'applications') {
       cls += ' loans-screen';
@@ -2318,10 +2530,11 @@ dialog[data-kind="tuition-released"] .dialog-body { margin-top: 0; }
       cls += ' loans-screen';
       body = loansUI.history({loan:loanRecords.find(record=>record.id===historyLoanId) || currentLoan()});
     } else if (screen === 'record') {
-      body = heading('Application details') + '<div class="status-row"><span>Application status</span><span class="status-badge">Approved</span></div><div class="record-list">' + summaryRows() + '</div><div class="divider"></div>' + repayment(true) + '<div class="divider"></div><dl class="plain-details"><dt>Reference</dt><dd>' + esc(state.reference) + '</dd><dt>Submitted</dt><dd>' + esc(new Date(state.submittedAt).toLocaleDateString('en-GB')) + '</dd><dt>Contact</dt><dd>' + esc(state.email) + '<br>' + esc(state.phone) + '</dd><dt>Address</dt><dd>' + esc(state.address) + ', ' + esc(state.lga) + ', ' + esc(state.state) + '</dd><dt>Admission letter</dt><dd>' + esc(state.admission && state.admission.name) + '</dd></dl>';
+      body = heading('Application details') + '<div class="status-row"><span>Application status</span><span class="status-badge is-approved">Approved</span></div><div class="record-list">' + summaryRows() + '</div><div class="divider"></div>' + repayment(true) + '<div class="divider"></div><dl class="plain-details"><dt>Reference</dt><dd>' + esc(state.reference) + '</dd><dt>Submitted</dt><dd>' + esc(new Date(state.submittedAt).toLocaleDateString('en-GB')) + '</dd><dt>Contact</dt><dd>' + esc(state.email) + '<br>' + esc(state.phone) + '</dd><dt>Address</dt><dd>' + esc(state.address) + ', ' + esc(state.lga) + ', ' + esc(state.state) + '</dd><dt>Admission letter</dt><dd>' + esc(state.admission && state.admission.name) + '</dd></dl>';
       bottom = '<div class="screen-footer">' + button('My applications','applications','secondary') + '</div>';
     }
     app.innerHTML = nav() + '<form class="screen ' + cls + '" aria-labelledby="screen-title" novalidate><div class="screen-body">' + body + '</div>' + bottom + '</form>';
+    if(options.backgroundUpdate)app.querySelector('.screen-body')?.classList.add('is-background-update');
     app.dataset.screen = screen;
     document.title = (document.getElementById('screen-title')?.innerText.replace(/\n/g,' ') || 'Application') + ' · SLAS';
     refreshControls(); updateResend(); syncCodeCells();
@@ -2567,7 +2780,7 @@ dialog[data-kind="tuition-released"] .dialog-body { margin-top: 0; }
       loanRecords=loanRecords.map(record=>record.id===released.id?released:record);
       if(state.screen==='applications'&&activeLoanId===released.id){
         const showSuccess=sequence===navigationToken&&dialog.open&&dialog.dataset.kind==='tuition-processing';
-        render();if(showSuccess)portalDialog('Tuition released',loansUI.released({loan:released,profileName:PROFILE_NAME}),'tuition-released');
+        render({backgroundUpdate:true});if(showSuccess)portalDialog('Tuition released',loansUI.released({loan:released,profileName:PROFILE_NAME}),'tuition-released');
       }
     },matchMedia('(prefers-reduced-motion: reduce)').matches?350:1600);
     releaseTimers.set(loan.id,timer);
