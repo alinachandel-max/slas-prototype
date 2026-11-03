@@ -2507,12 +2507,12 @@ dialog.tuition-motion-resizing .dialog-actions { flex: none; }
       body = heading('Choose Loan Options') + '<div class="funding-cards" role="radiogroup" aria-label="Loan options">' + fundingCard('tuition') + fundingCard('tuition-upkeep') + '</div><button type="button" class="repayment-link" data-help="repayment">View repayment terms</button>';
       bottom = footer('Continue with ' + money(model.amount(state)));
     } else if (screen === 'bank' || screen === 'bank-verified') {
-      body = heading('Bank Details' + (screen === 'bank-verified' ? ' <span class="is-verified">Verified</span>' : ''),'We use your bank details to verify your identity and send upkeep payments if you choose this option.');
+      body = heading('Bank Details' + (screen === 'bank-verified' ? ' <span class="is-verified">Verified</span>' : ''));
       if (screen === 'bank') body += '<div class="fields">' + field('bvn','Bank verification number',{placeholder:'11-digit BVN',inputmode:'numeric',maxlength:11,help:'bvn',autocomplete:'off'}) + field('bank','Bank',{placeholder:'Select your bank',options:model.BANKS}) + field('account','Account number',{placeholder:'10-digit account number',inputmode:'numeric',maxlength:10,help:'account',autocomplete:'off'}) + '</div>';
       else body += '<div class="record-list">' + row('Account name',PROFILE_NAME,'person') + row('Bank Account',state.bank + ' · ••••' + state.account.slice(-4),'nin') + '</div><button type="button" class="text-button edit-link" data-action="edit-bank">Edit bank details ' + img(assets.edit) + '</button>';
       bottom = footer(screen==='bank' ? 'Verify bank details' : 'Continue');
     } else if (screen === 'documents') {
-      body = heading('Supporting documents', 'Upload proof of admission from your institution’s portal or admissions office.') + '<div class="fields"><div class="field"><label for="admission">Admission letter<span class="required">*</span></label><p class="field-hint" id="admission-hint">PDF or JPG · Up to 2 MB</p>' + uploaded() + '<p class="field-error" id="upload-error" role="alert"' + (uploadError ? '' : ' hidden') + '>' + esc(uploadError) + '</p></div></div>';
+      body = heading('Supporting documents') + '<div class="fields"><div class="field"><label for="admission">Admission letter<span class="required">*</span></label><p class="field-hint" id="admission-hint">PDF or JPG · Up to 2 MB</p>' + uploaded() + '<p class="field-error" id="upload-error" role="alert"' + (uploadError ? '' : ' hidden') + '>' + esc(uploadError) + '</p></div></div>';
       body+='<div class="agreements documents-policy">'+agreement('policy','I have read and agree to the Student Loan Policy and Declaration.','Read policy and declaration','policy')+'</div>';
       bottom = footer('Continue');
     } else if (screen === 'review') {
